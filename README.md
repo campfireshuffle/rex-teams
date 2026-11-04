@@ -3,7 +3,7 @@
 A skill that lets Claude Code, Codex, and Pi work together as a team inside [Rex](https://rex.superlogical.com).
 
 - **Subagents.** An agent starts another agent in a background tab, keeps talking to it while it works, and gets woken up when it reports back. Then it closes the tab, or reopens it later with its memory intact.
-- **Teams.** You open a few long-running agents in Rex and label their tabs, say `chief`, `pm`, and `engineer`. They can find each other and send each other messages.
+- **Teams.** You open a few long-running agents in Rex and label their tabs or panes, say `chief`, `pm`, and `engineer`. They can find each other and send each other messages.
 
 It's a stopgap. I expect Rex to ship something like this itself, and when it does you can delete this skill without leaving anything behind: no daemon, no hooks, no config.
 
@@ -62,9 +62,18 @@ rex window new engineer -s launch -c ~/work/app    -- pi
 rex window new marketer -s launch -c ~/work/launch -- claude
 ```
 
-The labels are up to you. So is the shape of the team: a chief who hands out work, peers who talk freely, or several sessions. Give each agent its brief the way you normally would, in a first message or in its project's `AGENTS.md` or `CLAUDE.md`, and tell it who its teammates are. Then talk to one of them. Any agent can message any other with `send <session> <label> "..."`, and replies go back to whoever asked.
+Or put the team side by side in one tab, one labeled pane each:
 
-Agents sometimes rename the session they're in, so the skill addresses sessions by ID.
+```sh
+rex session new crew --window team -c ~/work/app -- claude
+rex block rename -s crew chief
+rex split -s crew --label eng --split right -c ~/work/app -- codex
+rex split -s crew --label qa  --split right -c ~/work/app -- pi
+```
+
+The labels are up to you. So is the shape of the team: a chief who hands out work, peers who talk freely, or several sessions. Give each agent its brief the way you normally would, in a first message or in its project's `AGENTS.md` or `CLAUDE.md`, and tell it who its teammates are. Then talk to one of them. An agent finds a teammate's block ID by its label with `rex session inspect`, messages it with `send <session> <block ID> "..."`, and replies go back to whoever asked.
+
+Agents sometimes rename sessions and tabs, so the skill uses labels only to find an agent and IDs to reach it.
 
 Teammates never get closed.
 
@@ -91,7 +100,7 @@ Two scripts in `skills/rex-teams/scripts/`, each starting with a comment saying 
 | Script | What it does |
 | --- | --- |
 | `spawn --name N --cwd DIR --task-file F [--depth N] -- AGENT [ARGS]` | Starts a subagent in a background tab and adds the rules for reporting back. `AGENT` is `claude`, `codex`, `pi`, or another agent CLI that takes a prompt as its last argument |
-| `send SESSION TAB MESSAGE` | Types one line into another agent's tab and presses Enter. `TAB` is a block ID or a tab label |
+| `send SESSION BLOCK MESSAGE` | Types one line into another agent's terminal and presses Enter. `BLOCK` is a block ID, found with `rex session inspect` |
 
 Subagent tasks live in `/tmp/rex-teams/tasks/<task-id>/`:
 
