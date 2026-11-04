@@ -1,0 +1,31 @@
+name: Bug
+description: Something doesn't work as the README says
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you asked for, what you expected, and what happened instead.
+    validations:
+      required: true
+  - type: input
+    id: agents
+    attributes:
+      label: Agents and versions
+      description: Which agent was the parent and which were subagents or teammates, with versions.
+      placeholder: "parent: claude 2.x, subagents: codex 0.x, pi 1.x"
+    validations:
+      required: true
+  - type: input
+    id: rex
+    attributes:
+      label: Rex version
+      description: Output of `rex --version`.
+    validations:
+      required: true
+  - type: textarea
+    id: details
+    attributes:
+      label: Details
+      description: The subagent's prompt.md and result.md, or a screenshot of the stuck tab, help a lot. Remove anything private.

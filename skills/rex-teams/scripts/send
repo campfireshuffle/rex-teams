@@ -1,0 +1,39 @@
+#!/bin/sh
+# Type a one-line message into another agent's Rex terminal and submit it.
+#
+#   send SESSION TAB MESSAGE
+#
+# SESSION is a session ID or label. TAB is a block ID or a tab label. The
+# message arrives as
+#   [from <your tab>, who can't see this screen. Reply by running: <this script> <your session> <your block> "<reply>"] MESSAGE
+# so the other agent knows who wrote and how to answer, even if it has never
+# heard of this skill. Without "can't see this screen", agents tend to answer
+# in their own pane, where nobody reads it.
+set -eu
+[ $# -eq 3 ] || { echo "usage: send SESSION TAB MESSAGE" >&2; exit 2; }
+session=$1 tab=$2 message=$3
+
+# A newline would submit half the message.
+case $message in
+  *'
+'*) echo "send: the message must be one line; put longer text in a file and send its path" >&2; exit 2 ;;
+esac
+
+# Name yourself by your tab's label, or by your block ID if the tab still has
+# Rex's default label ("Window 1a2b3c4d").
+from=$(rex session inspect "$REX_SESSION" --json |
+  jq -r --arg b "$REX_BLOCK" '.windows[] | select(any(.layers[].blocks[]; .block_id == $b)) | .label
+    | select(test("^Window [0-9a-f]+$") | not)')
+from=${from:-$REX_BLOCK}
+
+# Rex finds a block by ID with -b, and a tab by label with -w.
+case $tab in
+  block:*) by=-b ;;
+  *) by=-w ;;
+esac
+
+rex send -s "$session" "$by" "$tab" \
+  "[from $from, who can't see this screen. Reply by running: $(cd "$(dirname "$0")" && pwd)/send $REX_SESSION $REX_BLOCK \"<reply>\"] $message"
+# Codex can miss an Enter that arrives right after a long burst of text.
+sleep 0.5
+rex send-key -s "$session" "$by" "$tab" enter
