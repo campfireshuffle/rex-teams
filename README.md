@@ -2,7 +2,7 @@
 
 ![Claude starts three subagents in Rex, and they run side by side](media/hero.webp)
 
-A skill that lets coding agents in [Rex](https://rex.superlogical.com) start subagents, message long-running teammates, and set up one-time or recurring timers to check work on a schedule.
+A skill that lets coding agents in [Rex](https://rex.superlogical.com) start subagents, message long-running teammates, and set one-time or recurring alarms.
 
 > [!TIP]
 > I expect Rex to do this better itself one day. When it does, delete the skill.
@@ -29,16 +29,14 @@ Open agents in labeled tabs or panes, then talk to one:
 
 > Hi Chief, ask Marketer to create a launch video for my product. 
 
+### Set alarms
+
+> Check in on the Marketer agent in 20 minutes.
+
+> Every 30 minutes, wake up and check Reddit.
+
 ## Limits
 
 - If you're typing in a pane when a message lands, the message mixes into your draft.
 - A subagent that crashes before reporting wakes nobody.
-- Codex needs two settings in `~/.codex/config.toml`, so it can reach Rex and reply from the right tab:
-
-```toml
-[sandbox_workspace_write]
-network_access = true
-
-[features]
-daemon_auto_start = false
-```
+- Alarms stop if the Rex server restarts.

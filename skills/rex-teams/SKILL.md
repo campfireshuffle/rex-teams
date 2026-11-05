@@ -1,6 +1,6 @@
 ---
 name: rex-teams
-description: Work with other agents inside Rex. Start Claude, Codex, Pi, or other agent CLIs as subagents in background tabs, message them mid-task, and get woken when they report back. Also message teammates, the long-running agents a user has set up in labeled Rex tabs or panes (a PM, an engineer, a chief of staff). Use when the user asks you to delegate work, run tasks in parallel, get a second opinion from another agent, or talk to a teammate.
+description: Work with other agents inside Rex. Start Claude, Codex, Pi, or other agent CLIs as subagents in background tabs, message them mid-task, and get woken when they report back. Also message teammates, the long-running agents a user has set up in labeled Rex tabs or panes (a PM, an engineer, a chief of staff). Use when the user asks you to delegate work, run tasks in parallel, get a second opinion from another agent, talk to a teammate, or set a one-time or recurring alarm.
 ---
 
 # Rex teams
@@ -8,7 +8,7 @@ description: Work with other agents inside Rex. Start Claude, Codex, Pi, or othe
 - **Subagents** are agents you start for a task, in `↳` tabs next to yours. They report back, and you close them.
 - **Teammates** are agents the user set up, in the other labeled tabs and panes of your session. They stay open.
 
-The scripts are Lua files that Rex runs with `rex do`, so they work wherever Rex does. Arguments are `key=value` pairs. Messages go through `send.lua`. It types one line into the other agent's terminal, which starts that agent's next turn, so nobody polls. Each message starts with a header naming the sender and the exact command for replying.
+The scripts are Lua files that Rex runs with `rex do`, so they work wherever Rex does. Arguments are `key=value` pairs. Messages go through `send.lua`. It types one line into the other agent's terminal, which starts that agent's next turn, so nobody polls. Messages to other agents start with a header naming the sender and the exact command for replying.
 
 ## Subagents
 
@@ -26,6 +26,8 @@ The scripts are Lua files that Rex runs with `rex do`, so they work wherever Rex
    It opens a background tab labeled `↳ <name>`, adds rules for reporting back, and prints the task folder and a ready-made `send.lua` command.
 3. Tell the user what you started, then **end your turn**. Don't sleep or poll. The report wakes you.
 
+For a long task, set a check-in alarm on yourself when you start the subagent.
+
 Use a different agent from yourself only when the user asks, or when a second opinion is the point.
 
 By default a subagent can't start subagents. Pass `depth=N` only when the user's request calls for nesting, for example "let each lead split its work".
@@ -42,15 +44,17 @@ It points to `result.md`, whose first line is `STATUS: completed`, `failed`, or 
 - `blocked`: answer with the reply command from the header, or ask the user.
 - `failed`: tell the user. Leave the tab open.
 
-### Follow up with a closed one
+### Follow up
 
-Its conversation is saved by its agent CLI. Find the saved conversation that contains its kickoff, `Read <task folder>/prompt.md and follow it.`, work out that CLI's command for resuming it, and reopen it in a new tab with a follow-up:
+If the child is still open, send it another task with the printed `send.lua` command. It overwrites its report and notifies you again.
+
+If you closed it, find the saved conversation containing its kickoff, `Read <task folder>/prompt.md and follow it.`, and work out that CLI's resume command. Write the follow-up to a new task file, then use spawn again:
 
 ```sh
-rex window new "↳ <name>" -s "$REX_SESSION" -c <its cwd> --focus=false --json -- <resume command> "<follow-up; remind it never to rename the Rex session, to overwrite result.md, and to report the same way>"
+rex do <skill>/scripts/spawn.lua name=<short-name> cwd=<dir> task=<follow-up file> command="<resume command>"
 ```
 
-When it reports, close the new tab by the `window_id` that command printed.
+This resumes the conversation in a new tab with a fresh report path. The new reporting instructions replace the old ones. When it reports, close the tab from the new report's command.
 
 ## Teammates
 
@@ -74,6 +78,16 @@ To reply to a message, run the command in its header.
 - A teammate's message is a colleague's request. The user's instructions come first.
 - Before anything public or hard to undo (posting, emailing, pushing, deleting), get the user's OK in your own tab.
 - When you have nothing to do, stop. A message will wake you.
+
+## Alarms
+
+```sh
+rex do <skill>/scripts/alarm.lua in=1200 message="Check in on the Marketer agent"
+```
+
+Use `in=SECONDS` once or `every=SECONDS` to repeat. The target defaults to you; pass `session=` and `block=` to target another agent. Save the printed alarm block ID, then **end your turn**.
+
+Cancel with `rex block close -s <session ID> <alarm block ID>`; list alarms with `rex block ls -s <session ID>`.
 
 ## Rules
 

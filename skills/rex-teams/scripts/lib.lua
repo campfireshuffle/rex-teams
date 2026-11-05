@@ -1,4 +1,4 @@
--- Shared by send.lua, spawn.lua, and team.lua. Rex runs them with `rex do`,
+-- Shared by the scripts. Rex runs them with `rex do`,
 -- so they need nothing but rex.
 local lib = {}
 
@@ -88,6 +88,15 @@ end
 -- The command that sends a message to a terminal, for pasting into prompts.
 function lib.send_command(session, block, message)
   return 'rex do "' .. lib.dir .. 'send.lua" session=' .. session .. " block=" .. block .. ' message="' .. message .. '"'
+end
+
+function lib.header(from_session, from_block)
+  local from
+  for _, block in ipairs(lib.blocks(from_session)) do
+    if block.id == from_block then from = lib.name(block) end
+  end
+  local reply = lib.send_command(from_session, from_block, "<reply>")
+  return "[from " .. from .. ", who can't see this screen. " .. lib.rule .. " Reply by running: " .. reply .. "] "
 end
 
 return lib
