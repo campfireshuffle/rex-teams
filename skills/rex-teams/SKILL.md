@@ -1,6 +1,6 @@
 ---
 name: rex-teams
-description: Work with other agents inside Rex. Start Claude, Codex, or Pi subagents in background tabs, message them mid-task, and get woken when they report back. Also message teammates, the long-running agents a user has set up in labeled Rex tabs or panes (a PM, an engineer, a chief of staff). Use when the user asks you to delegate work, run tasks in parallel, get a second opinion from another agent, or talk to a teammate.
+description: Work with other agents inside Rex. Start Claude, Codex, Pi, or other agent CLIs as subagents in background tabs, message them mid-task, and get woken when they report back. Also message teammates, the long-running agents a user has set up in labeled Rex tabs or panes (a PM, an engineer, a chief of staff). Use when the user asks you to delegate work, run tasks in parallel, get a second opinion from another agent, or talk to a teammate.
 ---
 
 # Rex teams
@@ -20,6 +20,8 @@ Both are messaged with `<skill>/scripts/send`. It types one line into the other 
    ```sh
    <skill>/scripts/spawn --name <short-name> --cwd <dir> --task-file <file> -- claude|codex|pi [agent options]
    ```
+
+   For another agent CLI, put `{prompt}` where it takes its first prompt, for example `-- gemini -i {prompt}`. Without `{prompt}`, the prompt goes last.
 
    It opens a background tab labeled `↳ <name>`, adds rules for reporting back, and prints the task directory and a ready-made `send` command.
 3. Tell the user what you started, then **end your turn**. Don't sleep or poll. The report wakes you.

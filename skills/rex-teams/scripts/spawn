@@ -1,15 +1,16 @@
 #!/bin/sh
 # Start a subagent in a background Rex tab and tell it how to report back.
 #
-#   spawn --name NAME --cwd DIR --task-file FILE [--depth N] -- AGENT [ARGS...]
+#   spawn --name NAME --cwd DIR --task-file FILE [--depth N] -- COMMAND...
 #
-# AGENT is any agent CLI that takes its first prompt as the last argument,
-# such as claude, codex, or pi. --depth is how many levels of subagents it may
-# start below itself (default 0).
+# COMMAND starts any agent CLI. A {prompt} argument is replaced with the
+# agent's first prompt; without one, the prompt goes last, which suits claude,
+# codex, and pi. For example: -- gemini -i {prompt}. --depth is how many
+# levels of subagents it may start below itself (default 0).
 set -eu
 
 usage() {
-  echo "usage: spawn --name NAME --cwd DIR --task-file FILE [--depth N] -- AGENT [ARGS...]" >&2
+  echo "usage: spawn --name NAME --cwd DIR --task-file FILE [--depth N] -- COMMAND..." >&2
   exit 2
 }
 
@@ -53,10 +54,18 @@ task_id=$(basename "$task_dir")
 # their session before doing anything else, which would come before prompt.md.
 kickoff="You are a subagent. Never rename the Rex session; it belongs to the agent that started you. If asked to name your session, name your tab instead and keep the arrow: rex window rename \"↳ <name>\". Read $task_dir/prompt.md and follow it."
 
+# Put the kickoff where COMMAND has {prompt}, or last.
+placed=0
+for arg do
+  shift
+  if [ "$arg" = '{prompt}' ]; then set -- "$@" "$kickoff"; placed=1; else set -- "$@" "$arg"; fi
+done
+[ "$placed" = 1 ] || set -- "$@" "$kickoff"
+
 # Open the tab first: the report needs its ID. The agent takes seconds to
 # start, so prompt.md exists by the time it reads it.
 created=$(rex window new "↳ $name" -s "$REX_SESSION" -c "$cwd" --focus=false --keep-open --json -- \
-  env REX_TEAMS_DEPTH="$depth" "$@" "$kickoff")
+  env REX_TEAMS_DEPTH="$depth" "$@")
 window=$(printf '%s' "$created" | jq -r '.window_id')
 block=$(printf '%s' "$created" | jq -r '.block_ids[0]')
 
