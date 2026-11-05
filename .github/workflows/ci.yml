@@ -13,11 +13,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - name: Lint scripts
-        run: shellcheck -s sh skills/rex-teams/scripts/*
+      - name: Check the scripts parse as Lua 5.1, the version Rex runs
+        run: |
+          sudo apt-get install -y -qq lua5.1
+          for f in skills/rex-teams/scripts/*.lua; do luac5.1 -p "$f"; done
       - name: Check the skill's name matches its folder
         run: |
           name=$(sed -n 's/^name: //p' skills/rex-teams/SKILL.md)
           test "$name" = rex-teams || { echo "SKILL.md name is '$name', expected 'rex-teams'"; exit 1; }
-      - name: Check scripts are executable
-        run: test -x skills/rex-teams/scripts/spawn && test -x skills/rex-teams/scripts/send

@@ -15,6 +15,8 @@ Rex already gives agents everything this skill needs: tabs, `rex send`, and `rex
 npx skills add campfireshuffle/rex-teams
 ```
 
+It needs only Rex. The scripts are Lua that Rex runs itself, so they should work on Windows too, though only macOS is tested.
+
 ## Usage patterns 
 
 ### Subagents

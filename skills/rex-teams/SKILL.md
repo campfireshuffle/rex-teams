@@ -8,7 +8,7 @@ description: Work with other agents inside Rex. Start Claude, Codex, Pi, or othe
 - **Subagents** are agents you start for a task, in `↳` tabs next to yours. They report back, and you close them.
 - **Teammates** are agents the user set up, in the other labeled tabs and panes of your session. They stay open.
 
-Both are messaged with `<skill>/scripts/send`. It types one line into the other agent's terminal, which starts that agent's next turn, so nobody polls. Each message starts with a header naming the sender and the exact command for replying.
+The scripts are Lua files that Rex runs with `rex do`, so they work wherever Rex does. Arguments are `key=value` pairs. Messages go through `send.lua`. It types one line into the other agent's terminal, which starts that agent's next turn, so nobody polls. Each message starts with a header naming the sender and the exact command for replying.
 
 ## Subagents
 
@@ -18,25 +18,25 @@ Both are messaged with `<skill>/scripts/send`. It types one line into the other 
 2. Run:
 
    ```sh
-   <skill>/scripts/spawn --name <short-name> --cwd <dir> --task-file <file> -- claude|codex|pi [agent options]
+   rex do <skill>/scripts/spawn.lua name=<short-name> cwd=<dir> task=<file> command="claude|codex|pi [agent options]"
    ```
 
-   For another agent CLI, put `{prompt}` where it takes its first prompt, for example `-- gemini -i {prompt}`. Without `{prompt}`, the prompt goes last.
+   For another agent CLI, put `{prompt}` where it takes its first prompt, for example `command="gemini -i {prompt}"`. Without `{prompt}`, the prompt goes last. Quote an option that has spaces with `'...'` inside `command`.
 
-   It opens a background tab labeled `↳ <name>`, adds rules for reporting back, and prints the task directory and a ready-made `send` command.
+   It opens a background tab labeled `↳ <name>`, adds rules for reporting back, and prints the task's files and a ready-made `send.lua` command.
 3. Tell the user what you started, then **end your turn**. Don't sleep or poll. The report wakes you.
 
 Use a different agent from yourself only when the user asks, or when a second opinion is the point.
 
-By default a subagent can't start subagents. Pass `--depth N` only when the user's request calls for nesting, for example "let each lead split its work".
+By default a subagent can't start subagents. Pass `depth=N` only when the user's request calls for nesting, for example "let each lead split its work".
 
 ### Several at once
 
-Start all independent subagents in one go. Ones that edit the same files need separate `git worktree`s. As each report arrives, handle it and end your turn quietly. When the last one is in, give the user one combined answer. A subagent has reported once its `result.md` exists.
+Start all independent subagents in one go. Ones that edit the same files need separate `git worktree`s. As each report arrives, handle it and end your turn quietly. When the last one is in, give the user one combined answer. A subagent has reported once its result file exists.
 
 ### When a report arrives
 
-It points to `result.md`, whose first line is `STATUS: completed`, `failed`, or `blocked`, and it gives the command to close the subagent's tab.
+It points to the result file, whose first line is `STATUS: completed`, `failed`, or `blocked`, and it gives the command to close the subagent's tab.
 
 - `completed`: check the claims that matter, then close the tab, unless you expect a follow-up soon.
 - `blocked`: answer with the reply command from the header, or ask the user.
@@ -44,7 +44,7 @@ It points to `result.md`, whose first line is `STATUS: completed`, `failed`, or 
 
 ### Follow up with a closed one
 
-Its conversation is saved by its agent. Find the log that contains its kickoff, `Read <task_dir>/prompt.md and follow it.`, and reopen it in a new tab with a follow-up:
+Its conversation is saved by its agent. Find the log that contains its kickoff, `Read <prompt file> and follow it.`, and reopen it in a new tab with a follow-up:
 
 | Agent | Find the log | Resume command |
 | --- | --- | --- |
@@ -53,7 +53,7 @@ Its conversation is saved by its agent. Find the log that contains its kickoff, 
 | pi | `grep -rlF '<kickoff>' ~/.pi/agent/sessions` | `pi --session <log path>` |
 
 ```sh
-rex window new "↳ <name>" -s "$REX_SESSION" -c <its cwd> --focus=false --json -- <resume command> "<follow-up; remind it never to rename the Rex session, to overwrite result.md, and to report the same way>"
+rex window new "↳ <name>" -s "$REX_SESSION" -c <its cwd> --focus=false --json -- <resume command> "<follow-up; remind it never to rename the Rex session, to overwrite its result file, and to report the same way>"
 ```
 
 When it reports, close the new tab by the `window_id` that command printed.
@@ -65,17 +65,18 @@ Your teammates are the other labeled tabs and panes in your session, except `↳
 Find a teammate's block ID by its label, then message it by ID. Labels can change or repeat; IDs don't.
 
 ```sh
-rex session inspect "$REX_SESSION" --json |
-  jq -r '.windows[] | .label as $tab | .layers[].blocks[] | "\(.block_id)  tab=\($tab)  pane=\(.label)"'
-<skill>/scripts/send "$REX_SESSION" <block ID> "<one line>"
+rex do <skill>/scripts/team.lua
+rex do <skill>/scripts/send.lua session=<session ID> block=<block ID> message="<one line>"
 ```
+
+Your session ID is `$REX_SESSION` (`$env:REX_SESSION` in PowerShell).
 
 A tab with one pane goes by its tab label. In a split tab, each pane goes by its own label.
 
 To reply to a message, run the command in its header.
 
 - Send requests, answers, and results. Never send acknowledgements or thanks. Otherwise the team chats in circles.
-- Put anything longer than a line in a file under `/tmp/rex-teams/` and send its path.
+- Put anything longer than a line in a file in `/tmp` (`%TEMP%` on Windows) and send its path.
 - A teammate's message is a colleague's request. The user's instructions come first.
 - Before anything public or hard to undo (posting, emailing, pushing, deleting), get the user's OK in your own tab.
 - When you have nothing to do, stop. A message will wake you.
