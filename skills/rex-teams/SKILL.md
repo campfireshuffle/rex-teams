@@ -1,6 +1,6 @@
 ---
 name: rex-teams
-description: Work with other agents inside Rex. Start Claude, Codex, Pi, or other agent CLIs as subagents in background tabs, message them mid-task, and get woken when they report back. Also message teammates, the long-running agents a user has set up in labeled Rex tabs or panes (a PM, an engineer, a chief of staff). Use when the user asks you to delegate work, run tasks in parallel, get a second opinion from another agent, talk to a teammate, or set a one-time or recurring alarm.
+description: Work with other agents inside Rex. Start Claude, Codex, Pi, or other agent CLIs as subagents in background tabs, message them mid-task, and get woken when they report back. Also message teammates, the long-running agents a user has set up in labeled Rex tabs or panes (a PM, an engineer, a chief of staff). Use when the user asks you to delegate work, run tasks in parallel, get a second opinion from another agent, talk to a teammate, or set a one-time or recurring alarm, such as a reminder, a check back in N minutes, or a task to repeat every N minutes.
 ---
 
 # Rex teams
@@ -86,6 +86,8 @@ rex do <skill>/scripts/alarm.lua in=1200 message="Check in on the Marketer agent
 ```
 
 Use `in=SECONDS` once or `every=SECONDS` to repeat. The target defaults to you; pass `session=` and `block=` to target another agent. Save the printed alarm block ID, then **end your turn**.
+
+Give a recurring alarm a stop condition in its message, such as "cancel this alarm once CI is green".
 
 Cancel with `rex block close -s <session ID> <alarm block ID>`; list alarms with `rex block ls -s <session ID>`.
 
