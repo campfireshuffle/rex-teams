@@ -1,4 +1,4 @@
-# rex-teams
+# Rex Teams
 
 ![Claude starts three subagents in Rex, and they run side by side](media/hero.webp)
 
