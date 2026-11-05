@@ -2,7 +2,7 @@
 
 ![Claude starts three subagents in Rex, and they run side by side](media/hero.webp)
 
-A skill that lets coding agents in [Rex](https://rex.superlogical.com) start subagents and message long-running teammates.
+A skill that lets coding agents in [Rex](https://rex.superlogical.com) start subagents, message long-running teammates, and set up one-time or recurring timers to check work on a schedule.
 
 > [!TIP]
 > I expect Rex to do this better itself one day. When it does, delete the skill.
