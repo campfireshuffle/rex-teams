@@ -11,7 +11,7 @@ if not a.worker then
   local from_session, from_block = lib.me()
   local session, block = a.session or from_session, a.block or from_block
   local header = session == from_session and block == from_block
-    and ("[alarm you set. " .. lib.rule .. "] ")
+    and "[alarm you set] "
     or lib.header(from_session, from_block)
   lib.attach(session)
   local alarm = lib.call("session.new_block", {

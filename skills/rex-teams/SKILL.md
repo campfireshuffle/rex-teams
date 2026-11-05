@@ -86,7 +86,7 @@ rex do <skill>/scripts/alarm.lua in=1200 message="Check in on the Marketer agent
 
 Use `in=SECONDS` once or `every=SECONDS` to repeat. The target defaults to you; pass `session=` and `block=` to target another agent. Save the printed alarm block ID, then **end your turn**.
 
-Give a recurring alarm a stop condition in its message, such as "cancel this alarm once CI is green".
+Keep the message to a short note to yourself, since you'll still have the conversation. Give a recurring alarm a stop condition, such as "check CI, and cancel this alarm once it's green".
 
 Cancel with `rex block close -s <session ID> <alarm block ID>`; list alarms with `rex block ls -s <session ID>`.
 
