@@ -22,9 +22,13 @@ local function scenario(name, setup, exercise, expected)
   dofile = function(path)
     assert(path:match("lib.lua$"))
     return {
+      rule = "Don't rename the Rex session or your tab.",
+      attach = function() end,
+      write = function(path, text)
+        local f = assert(io.open(path, "w")); f:write(text); f:close()
+      end,
       call = function(method)
         if state.api_error then error("connection lost", 0) end
-        if method == "session.attach" then return {} end
         if method == "session.list_blocks" then
           local blocks = {}
           for id, present in pairs(state.present) do if present then blocks[#blocks + 1] = { block_id = id } end end
@@ -33,7 +37,7 @@ local function scenario(name, setup, exercise, expected)
         assert(method == "block.method")
         return { last_exit = state.exits and { exit_code = 0 } or nil }
       end,
-      type_line = function(_, _, message)
+      paste_line = function(_, _, message)
         state.messages[#state.messages + 1] = message
         if state.send_error then error("uncertain write", 0) end
       end,
@@ -96,28 +100,17 @@ for _, target in ipairs({ "child", "parent" }) do
     assert(s.stopped)
   end, 0)
 end
-scenario("CRLF report", function(s, path)
-  s.exits = true
-  local f = assert(io.open(path, "wb")); f:write("STATUS: completed\r\nReport\r\n"); f:close()
-end, function(s) s.fire() end, 0)
-scenario("empty report", function(s, path)
-  s.exits = true
-  assert(io.open(path, "w")):close()
-end, function(s) s.fire() end, 1)
 for _, status in ipairs({ "completed", "failed", "blocked" }) do
-  scenario("existing " .. status .. " report", function(s, path)
-    s.exits = true
+  scenario("follow-up exit after " .. status .. " report", function(s, path)
     local f = assert(io.open(path, "w")); f:write("STATUS: " .. status .. "\nReport\n"); f:close()
-  end, function(s) s.fire() end, 0)
+  end, function(s)
+    assert(#s.timers == 0 and not s.stopped)
+    s.exits = true
+    s.event("terminal.child_exited", "child")
+    s.fire()
+    assert(s.messages[1]:find("may be absent or stale", 1, true))
+  end, 1)
 end
-scenario("malformed report", function(s, path)
-  s.exits = true
-  local f = assert(io.open(path, "w")); f:write("partial"); f:close()
-end, function(s) s.fire() end, 1)
-scenario("report published before reconciliation", function(s) s.exits = true end, function(s, path)
-  local f = assert(io.open(path, "w")); f:write("STATUS: completed\n"); f:close()
-  s.fire()
-end, 0)
 scenario("event without confirmed process exit", nil, function(s)
   s.event("terminal.child_exited", "child")
   s.fire()
@@ -135,5 +128,5 @@ scenario("ambiguous send is not retried", function(s) s.exits = true end, functi
   assert(#s.timers == 0)
 end, 1)
 rex, dofile = original_rex, original_dofile
-assert(#passed == 19)
+assert(#passed == 15)
 print(#passed .. " watchdog scenarios passed")

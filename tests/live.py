@@ -79,10 +79,10 @@ def main():
                 eventually(ready.exists)
                 return worker
 
-            def timer(text, seconds=0.3, recurring=False):
+            def alarm(text, seconds=0.3, recurring=False):
                 # Matches the documented background-tab command, not a shell job.
-                result = json.loads(cli("run", "-s", session, "--label", "wake-up", "--focus=false", "--json", "--",
-                                        REX, "do", "-s", session, "--fail-fast", str(SCRIPTS / "wake.lua"),
+                result = json.loads(cli("run", "-s", session, "--label", "alarm", "--focus=false", "--json", "--",
+                                        REX, "do", "-s", session, "--fail-fast", str(SCRIPTS / "alarm.lua"),
                                         "session=" + session, "block=" + parent,
                                         "seconds=" + str(seconds), "recurring=" + str(recurring).lower(), "message=" + text))
                 return result["block_ids"][0]
@@ -90,28 +90,28 @@ def main():
             for override in ({"seconds": "0"}, {"seconds": "-1"}, {"recurring": "yes"}, {"message": "two\nlines"}):
                 args = {"session": session, "block": parent, "seconds": "1", "message": "invalid", **override}
                 rejected = subprocess.run([REX, "--autostart=false", "do", "-s", session, "--fail-fast",
-                                           str(SCRIPTS / "wake.lua"), *[k + "=" + v for k, v in args.items()]],
+                                           str(SCRIPTS / "alarm.lua"), *[k + "=" + v for k, v in args.items()]],
                                           text=True, capture_output=True, timeout=10)
-                assert rejected.returncode != 0 and "Wake-up armed" not in rejected.stdout
+                assert rejected.returncode != 0 and "Alarm armed" not in rejected.stdout
             assert not received()
-            print("ok invalid timer arguments fail before arming")
+            print("ok invalid alarm arguments fail before arming")
 
-            timer_id = timer("once")
-            eventually(lambda: received() == ["[scheduled wake-up] once"])
-            eventually(lambda: not alive(timer_id))
+            alarm_id = alarm("once")
+            eventually(lambda: received() == ["[alarm] Don't rename the Rex session or your tab. once"])
+            eventually(lambda: not alive(alarm_id))
             print("ok one-shot script delivers once after creator returns and cleans up")
 
-            timer_id = timer("repeat", 0.8, recurring=True)
+            alarm_id = alarm("repeat", 0.8, recurring=True)
             eventually(lambda: sum("repeat" in m for m in received()) >= 2)
-            close(timer_id)
+            close(alarm_id)
             time.sleep(1)
             before = len(received())
             time.sleep(1)
             assert len(received()) == before
             print("ok recurring script and explicit cancellation")
 
-            timer_id = timer("cancelled", 30)
-            close(timer_id)
+            alarm_id = alarm("cancelled", 30)
+            close(alarm_id)
             time.sleep(0.5)
             assert not any("cancelled" in m for m in received())
             print("ok cancel before firing")
@@ -146,13 +146,17 @@ def main():
             for status in ("completed", "failed", "blocked"):
                 report = tmp / (status + ".md")
                 report.write_text("STATUS: " + status + "\nTest report\n")
-                child = block(["/bin/sh", "-c", "exit 0"])
+                child = block([sys.executable, "-c", "import sys; input(); sys.exit(7)"])
                 before = len(received())
                 worker = watch(child, report, status)
+                assert len(received()) == before and alive(worker)
+                cli("send", "-s", session, "-b", child, "follow-up")
+                cli("send-key", "-s", session, "-b", child, "enter")
+                eventually(lambda: len(received()) == before + 1)
                 eventually(lambda: not alive(worker))
-                assert len(received()) == before
+                assert "may be absent or stale" in received()[-1]
                 close(child)
-            print("ok all three valid report statuses suppress notices")
+            print("ok follow-up exits notify despite completed, failed, or blocked reports")
 
             child = block(["/bin/sleep", "60"])
             worker = watch(child, tmp / "missing", "manual-close")
@@ -185,12 +189,12 @@ def main():
             # Target disappearance stops both kinds of worker.
             child = block(["/bin/sleep", "60"])
             worker = watch(child, tmp / "missing", "parent-gone")
-            timer_id = timer("never", 60, recurring=True)
+            alarm_id = alarm("never", 60, recurring=True)
             close(parent)
-            eventually(lambda: not alive(worker) and not alive(timer_id))
-            print("ok parent closure cleans up watchdog and recurring timer")
-            timer_id = timer("gone", 60)
-            eventually(lambda: not alive(timer_id))
+            eventually(lambda: not alive(worker) and not alive(alarm_id))
+            print("ok parent closure cleans up watchdog and recurring alarm")
+            alarm_id = alarm("gone", 60)
+            eventually(lambda: not alive(alarm_id))
             worker = watch(child, tmp / "missing", "parent-already-gone")
             eventually(lambda: not alive(worker))
             print("ok startup after parent closure leaves no workers")

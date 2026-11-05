@@ -1,4 +1,4 @@
--- Internal spawn watchdog. Observe the first task's process exit, not its
+-- Internal spawn watchdog. Observe the agent's process exit, not its
 -- screen or OSC status. The retained child terminal covers exits before attach.
 local lib = dofile(debug.getinfo(1, "S").source:gsub("^@", ""):match("^(.*[/\\])") .. "lib.lua")
 local args = rex.args
@@ -21,16 +21,8 @@ local function reconcile()
   if not process then rex.stop() end
   if not process.last_exit then return end
 
-  local file = io.open(args.result)
-  if file then
-    local status = file:read("*l")
-    file:close()
-    if status then status = status:gsub("\r$", "") end
-    if status == "STATUS: completed" or status == "STATUS: failed" or status == "STATUS: blocked" then rex.stop() end
-  end
-
   -- No delivery retry: a failed terminal write may already have typed something.
-  lib.type_line(session, parent, "[watchdog " .. args.task .. "] Subagent exited; no valid initial report could be read at "
+  lib.paste_line(session, parent, "[watchdog " .. args.task .. "] " .. lib.rule .. " Subagent process exited. Check any outstanding work. Report path (may be absent or stale): "
     .. args.result .. ". Inspect its terminal: rex capture -s " .. session .. " -b " .. child
     .. ". This is an exit notice, not a crash diagnosis.")
   rex.stop()
@@ -49,12 +41,10 @@ rex.on("block_closed", function(ctx, ev)
   if ctx.session_id == session and (ev.block_id == child or ev.block_id == parent) then rex.stop() end
 end)
 
-lib.call("session.attach", { session_id = session })
+lib.attach(session)
 -- Subscribe first, then inspect. An immediate exit is seen by either path;
 -- both paths use the same timer so it can't produce two notices.
 local process = inspect()
 if process and process.last_exit then check_later() end
-local ready = assert(io.open(args.ready, "w"))
-ready:write("ready\n")
-ready:close()
+lib.write(args.ready, "ready\n")
 if not process then rex.stop() end

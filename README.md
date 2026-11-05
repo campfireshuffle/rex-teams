@@ -2,7 +2,7 @@
 
 ![Claude starts three subagents in Rex, and they run side by side](media/hero.webp)
 
-A skill that lets coding agents in [Rex](https://rex.superlogical.com) start subagents, message long-running teammates, and set up one-time or recurring timers to check work on a schedule.
+A skill that lets coding agents in [Rex](https://rex.superlogical.com) start subagents, message long-running teammates, and set one-time or recurring alarms.
 
 > [!TIP]
 > I expect Rex to do this better itself one day. When it does, delete the skill.
@@ -23,23 +23,27 @@ Ask your agent:
 
 > Have Codex review this diff and Pi check the docs, then merge their findings.
 
+Spawned subagents get a background exit watcher. It notifies the parent if the agent's process exits, including during follow-up work. Closing the child's tab cancels the watcher quietly.
+
 ### Teammates (Grok Bot style)
 
 Open agents in labeled tabs or panes, then talk to one:
 
 > Hi Chief, ask Marketer to create a launch video for my product. 
 
-### Scheduled wake-ups
+### Set alarms
 
-Ask your agent to wake itself later, or periodically. The skill's `wake.lua` script runs in a background Rex tab. Nothing extra needs installing.
+> Check in on the Marketer agent in 20 minutes.
 
-Spawned subagents also get a small exit watchdog. If a child exits without a valid initial report, it wakes the parent with an exit notice.
+> Every 30 minutes, wake up and check Reddit.
+
+Alarms support a one-time delay or a repeating interval, not cron expressions or calendar schedules. They run in background Rex tabs; nothing extra needs installing.
 
 ## Limits
 
 - If you're typing in a pane when a message lands, the message mixes into your draft.
-- The watchdog covers the initial report, not hangs or follow-up tasks. A child that writes its result but dies before notifying the parent can still leave the parent waiting.
-- Timers and watchdogs require their Rex session and worker processes to remain alive. They do not recover after a server restart.
+- The exit watcher detects process exit, not a hung agent or a finished turn. A CLI that exits normally after reporting also produces an exit notice; this is not a crash diagnosis.
+- Alarms and exit watchers require their Rex session and worker processes to remain alive. They do not recover after a server restart.
 - Codex needs two settings in `~/.codex/config.toml`, so it can reach Rex and reply from the right tab:
 
 ```toml

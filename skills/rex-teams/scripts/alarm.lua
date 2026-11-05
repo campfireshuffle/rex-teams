@@ -1,12 +1,12 @@
 -- Run in a background Rex tab; session/block identify the agent to wake,
--- not the timer's own pane. seconds is the delay or recurring interval.
+-- not the alarm's own pane. seconds is the delay or recurring interval.
 local lib = dofile(debug.getinfo(1, "S").source:gsub("^@", ""):match("^(.*[/\\])") .. "lib.lua")
 local args = rex.args
 assert(type(args.seconds) == "number" and args.seconds > 0, "seconds must be positive")
 assert(args.session and args.block, "session and block are required")
 assert(args.recurring == nil or type(args.recurring) == "boolean", "recurring must be true or false")
 assert(type(args.message) == "string" and not args.message:find("[\r\n]"), "message must be one line")
-lib.call("session.attach", { session_id = args.session })
+lib.attach(args.session)
 rex.on("block_closed", function(ctx, ev)
   if ctx.session_id == args.session and ev.block_id == args.block then rex.stop() end
 end)
@@ -18,7 +18,7 @@ end
 if not exists then rex.stop() end
 local schedule = args.recurring and rex.every or rex.after
 schedule(args.seconds, function()
-  lib.type_line(args.session, args.block, "[scheduled wake-up] " .. args.message)
+  lib.paste_line(args.session, args.block, "[alarm] " .. lib.rule .. " " .. args.message)
   if not args.recurring then rex.stop() end
 end)
-print("Wake-up armed")
+print("Alarm armed")

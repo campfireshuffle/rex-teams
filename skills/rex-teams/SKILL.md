@@ -1,6 +1,6 @@
 ---
 name: rex-teams
-description: Work with other agents inside Rex. Start Claude, Codex, Pi, or other agent CLIs as subagents in background tabs, message them mid-task, and get woken when they report back. Also message teammates, the long-running agents a user has set up in labeled Rex tabs or panes (a PM, an engineer, a chief of staff). Use when the user asks you to delegate work, run tasks in parallel, get a second opinion from another agent, or talk to a teammate.
+description: Work with other agents inside Rex. Start Claude, Codex, Pi, or other agent CLIs as subagents in background tabs, message them mid-task, and get woken when they report back. Also message teammates, the long-running agents a user has set up in labeled Rex tabs or panes (a PM, an engineer, a chief of staff). Use when the user asks you to delegate work, run tasks in parallel, get a second opinion from another agent, talk to a teammate, or set a one-time or recurring alarm.
 ---
 
 # Rex teams
@@ -26,7 +26,7 @@ The scripts are Lua files that Rex runs with `rex do`, so they work wherever Rex
    It opens a background tab labeled `↳ <name>`, adds rules for reporting back, and prints the task folder and a ready-made `send.lua` command.
 3. Tell the user what you started, then **end your turn**. Don't sleep or poll. The report wakes you.
 
-Spawn also starts a Rex-hosted watchdog. If the child exits before writing a valid initial report, it notifies you once. Closing the child's pane cancels the watch. It does not diagnose hangs or monitor follow-up tasks. A result written before a failed notification is still a reporting gap; the watchdog stays quiet when a valid result exists. If spawn says the watchdog did not start, inspect the printed child/watcher IDs rather than spawning a duplicate.
+Spawn also starts a background exit watcher. It notifies you once if the child's process exits, even if a report already exists. This covers follow-up work in the same pane without tracking tasks. Closing the child's pane cancels the watch quietly. An exit notice is not a failure diagnosis: a CLI may exit normally after reporting. For hangs or forgotten reports while the process is still alive, set a check-in alarm. If spawn says the watchdog did not start, inspect the printed child/watcher IDs rather than spawning a duplicate.
 
 Use a different agent from yourself only when the user asks, or when a second opinion is the point.
 
@@ -44,15 +44,17 @@ It points to `result.md`, whose first line is `STATUS: completed`, `failed`, or 
 - `blocked`: answer with the reply command from the header, or ask the user.
 - `failed`: tell the user. Leave the tab open.
 
-### Follow up with a closed one
+### Follow up
 
-Its conversation is saved by its agent CLI. Find the saved conversation that contains its kickoff, `Read <task folder>/prompt.md and follow it.`, work out that CLI's command for resuming it, and reopen it in a new tab with a follow-up:
+If the child is still open, send it another task with the printed `send.lua` command. It overwrites its report and notifies you again; the same exit watcher remains active.
+
+If you closed it, find the saved conversation containing its kickoff, `Read <task folder>/prompt.md and follow it.`, and work out that CLI's resume command. Write the follow-up to a new task file, then use spawn again:
 
 ```sh
-rex window new "↳ <name>" -s "$REX_SESSION" -c <its cwd> --focus=false --json -- <resume command> "<follow-up; remind it never to rename the Rex session, to overwrite result.md, and to report the same way>"
+rex do <skill>/scripts/spawn.lua name=<short-name> cwd=<dir> task=<follow-up file> command="<resume command>"
 ```
 
-When it reports, close the new tab by the `window_id` that command printed.
+This resumes the conversation in a new tab with a fresh report path and exit watcher. The new reporting instructions replace the old ones. When it reports, close the tab from the new report's command.
 
 ## Teammates
 
@@ -77,17 +79,19 @@ To reply to a message, run the command in its header.
 - Before anything public or hard to undo (posting, emailing, pushing, deleting), get the user's OK in your own tab.
 - When you have nothing to do, stop. A message will wake you.
 
-## Scheduled wake-ups
+## Alarms
 
-Run `wake.lua` in a background tab, passing the **target agent's** session and block IDs:
+Run `alarm.lua` in a background tab, passing the **target agent's** session and block IDs:
 
 ```sh
-rex run -s <session ID> --label wake-up --focus=false --json -- rex do -s <session ID> --fail-fast <skill>/scripts/wake.lua session=<session ID> block=<target block ID> seconds=1200 message="Check the deployment"
+rex run -s <session ID> --label alarm --focus=false --json -- rex do -s <session ID> --fail-fast <skill>/scripts/alarm.lua session=<session ID> block=<target block ID> seconds=1200 message="Check in on the Marketer agent"
 ```
 
-Add `recurring=true` to repeat at that interval. Save the returned timer block ID, capture it once to confirm `Wake-up armed`, then **end your turn**. Cancel with `rex block close -s <session ID> <timer block ID>`; list timers with `rex block ls`.
+`seconds` is a one-time delay. Add `recurring=true` to repeat at that interval; use `seconds=1800` for every 30 minutes. Cron expressions and calendar schedules are not supported.
 
-No scheduler installation is needed. The script must exist on the Rex host. Timers stop when their target closes and do not survive session/server shutdown. Delivery uses the same terminal input as other messages: it can mix with drafts or approval prompts, and recurring messages may accumulate while an agent is busy.
+Save the returned alarm block ID, capture it once to confirm `Alarm armed`, then **end your turn**. Cancel with `rex block close -s <session ID> <alarm block ID>`; list alarms with `rex block ls`.
+
+Nothing extra needs installing. The script must exist on the Rex host. Alarms stop when their target closes and do not survive session/server shutdown. Delivery uses the same terminal input as other messages: it can mix with drafts or approval prompts, and recurring messages may accumulate while an agent is busy.
 
 ## Rules
 
