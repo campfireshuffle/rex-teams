@@ -1,6 +1,6 @@
 # Contributing
 
-Thanks for helping. rex-teams is meant to stay small: two shell scripts and one skill file, with no daemon, hooks, or config. The goal is that Rex can replace it one day and nobody misses anything.
+Thanks for helping. rex-teams is meant to stay small: a few Lua scripts that Rex runs with `rex do`, and one skill file. No daemon, no hooks. The goal is that Rex can replace it one day and nobody misses anything.
 
 ## Before you start
 
@@ -9,7 +9,7 @@ Thanks for helping. rex-teams is meant to stay small: two shell scripts and one 
 
 ## Making a change
 
-1. Keep the scripts POSIX `sh`, and run `shellcheck -s sh skills/rex-teams/scripts/*`.
+1. Keep the scripts to Lua 5.1 and Rex's `rex` API, so they run wherever Rex does. Check they parse with `luac5.1 -p skills/rex-teams/scripts/*.lua`.
 2. Test the change in Rex with real agents. At least run one fan-out (one subagent each of Claude, Codex, and Pi) and one resume, and say in the pull request what you ran.
 3. Update `README.md` when behavior changes. Release notes are written from the merged pull requests, so a clear title is enough.
 
