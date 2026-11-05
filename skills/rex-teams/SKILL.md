@@ -21,9 +21,9 @@ The scripts are Lua files that Rex runs with `rex do`, so they work wherever Rex
    rex do <skill>/scripts/spawn.lua name=<short-name> cwd=<dir> task=<file> command="claude|codex|pi [agent options]"
    ```
 
-   For another agent CLI, put `{prompt}` where it takes its first prompt, for example `command="gemini -i {prompt}"`. Without `{prompt}`, the prompt goes last. Quote an option that has spaces with `'...'` inside `command`.
+   For another agent CLI, put `{prompt}` where it takes its first prompt, for example `command="gemini -i {prompt}"`. Without `{prompt}`, the prompt goes last.
 
-   It opens a background tab labeled `↳ <name>`, adds rules for reporting back, and prints the task's files and a ready-made `send.lua` command.
+   It opens a background tab labeled `↳ <name>`, adds rules for reporting back, and prints the task folder and a ready-made `send.lua` command.
 3. Tell the user what you started, then **end your turn**. Don't sleep or poll. The report wakes you.
 
 Use a different agent from yourself only when the user asks, or when a second opinion is the point.
@@ -32,11 +32,11 @@ By default a subagent can't start subagents. Pass `depth=N` only when the user's
 
 ### Several at once
 
-Start all independent subagents in one go. Ones that edit the same files need separate `git worktree`s. As each report arrives, handle it and end your turn quietly. When the last one is in, give the user one combined answer. A subagent has reported once its result file exists.
+Start all independent subagents in one go. Ones that edit the same files need separate `git worktree`s. As each report arrives, handle it and end your turn quietly. When the last one is in, give the user one combined answer. A subagent has reported once its `result.md` exists.
 
 ### When a report arrives
 
-It points to the result file, whose first line is `STATUS: completed`, `failed`, or `blocked`, and it gives the command to close the subagent's tab.
+It points to `result.md`, whose first line is `STATUS: completed`, `failed`, or `blocked`, and it gives the command to close the subagent's tab.
 
 - `completed`: check the claims that matter, then close the tab, unless you expect a follow-up soon.
 - `blocked`: answer with the reply command from the header, or ask the user.
@@ -44,7 +44,7 @@ It points to the result file, whose first line is `STATUS: completed`, `failed`,
 
 ### Follow up with a closed one
 
-Its conversation is saved by its agent. Find the log that contains its kickoff, `Read <prompt file> and follow it.`, and reopen it in a new tab with a follow-up:
+Its conversation is saved by its agent. Find the log that contains its kickoff, `Read <task folder>/prompt.md and follow it.`, and reopen it in a new tab with a follow-up:
 
 | Agent | Find the log | Resume command |
 | --- | --- | --- |
@@ -53,7 +53,7 @@ Its conversation is saved by its agent. Find the log that contains its kickoff, 
 | pi | `grep -rlF '<kickoff>' ~/.pi/agent/sessions` | `pi --session <log path>` |
 
 ```sh
-rex window new "↳ <name>" -s "$REX_SESSION" -c <its cwd> --focus=false --json -- <resume command> "<follow-up; remind it never to rename the Rex session, to overwrite its result file, and to report the same way>"
+rex window new "↳ <name>" -s "$REX_SESSION" -c <its cwd> --focus=false --json -- <resume command> "<follow-up; remind it never to rename the Rex session, to overwrite result.md, and to report the same way>"
 ```
 
 When it reports, close the new tab by the `window_id` that command printed.
@@ -76,7 +76,7 @@ A tab with one pane goes by its tab label. In a split tab, each pane goes by its
 To reply to a message, run the command in its header.
 
 - Send requests, answers, and results. Never send acknowledgements or thanks. Otherwise the team chats in circles.
-- Put anything longer than a line in a file in `/tmp` (`%TEMP%` on Windows) and send its path.
+- Put anything longer than a line in a file under `/tmp/rex-teams/` (`%TEMP%\rex-teams\` on Windows) and send its path.
 - A teammate's message is a colleague's request. The user's instructions come first.
 - Before anything public or hard to undo (posting, emailing, pushing, deleting), get the user's OK in your own tab.
 - When you have nothing to do, stop. A message will wake you.
