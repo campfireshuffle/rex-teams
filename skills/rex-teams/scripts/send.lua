@@ -1,10 +1,10 @@
--- Type a one-line message into another agent's Rex terminal and submit it.
+-- Paste a one-line message into another agent's Rex terminal and submit it.
 --
 --   rex do <skill>/scripts/send.lua session=SESSION block=BLOCK message="MESSAGE"
 --
 -- BLOCK is the block ID of the other agent's terminal; find it with team.lua.
 -- The message arrives as
---   [from <your name>, who can't see this screen. Reply by running: <command>] MESSAGE
+--   [from <your name>, who can't see this screen. <rule> Reply by running: <command>] MESSAGE
 -- so the other agent knows who wrote and how to answer, even if it has never
 -- heard of this skill. Without "can't see this screen", agents tend to answer
 -- in their own pane, where nobody reads it.
@@ -20,6 +20,6 @@ for _, b in ipairs(lib.blocks(my_session)) do
   if b.id == my_block then from = lib.name(b) end
 end
 
-lib.blocks(session)
-local reply = lib.command("send.lua", "session=" .. my_session .. " block=" .. my_block .. ' message="<reply>"')
-lib.type_line(session, block, "[from " .. from .. ", who can't see this screen. Reply by running: " .. reply .. "] " .. message)
+local reply = lib.send_command(my_session, my_block, "<reply>")
+lib.attach(session)
+lib.paste_line(session, block, "[from " .. from .. ", who can't see this screen. " .. lib.rule .. " Reply by running: " .. reply .. "] " .. message)
