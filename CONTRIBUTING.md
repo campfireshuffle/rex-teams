@@ -10,7 +10,7 @@ Thanks for helping. rex-teams is meant to stay small: a few Lua scripts that Rex
 ## Making a change
 
 1. Keep the scripts to Lua 5.1 and Rex's `rex` API, so they run wherever Rex does. Check they parse with `luac5.1 -p skills/rex-teams/scripts/*.lua`.
-2. Test the change in Rex with real agents. At least run one fan-out (one subagent each of Claude, Codex, and Pi) and one resume, and say in the pull request what you ran.
+2. Test the change in Rex with real agents. At least run one fan-out (one subagent each of Claude, Codex, and Pi), one resume, and one alarm, and say in the pull request what you ran.
 3. Update `README.md` when behavior changes. Release notes are written from the merged pull requests, so a clear title is enough.
 
 ## Pull requests

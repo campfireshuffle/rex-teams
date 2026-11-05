@@ -4,7 +4,7 @@
 
 ## How I tested it
 
-<!-- Which agents you ran (Claude, Codex, Pi) and what you tried: a fan-out, a resume, a teammate message. -->
+<!-- Which agents you ran (Claude, Codex, Pi) and what you tried: a fan-out, a resume, a teammate message, an alarm. -->
 
-- [ ] `shellcheck -s sh skills/rex-teams/scripts/*` passes
+- [ ] `luac5.1 -p skills/rex-teams/scripts/*.lua` passes
 - [ ] README updated if behavior changed
