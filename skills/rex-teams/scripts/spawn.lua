@@ -10,13 +10,9 @@ local lib = dofile(debug.getinfo(1, "S").source:gsub("^@", ""):match("^(.*[/\\])
 local a = rex.args
 assert(a.name and a.cwd and a.task and a.command, 'usage: spawn.lua name=NAME cwd=DIR task=FILE command="AGENT [ARGS...]" [depth=N]')
 local depth = a.depth or 0
-
-local file = assert(io.open(a.task))
-local task = file:read("*a")
-file:close()
-
+local task = lib.read(a.task)
 local session, me = lib.me()
-lib.blocks(session)
+lib.attach(session)
 
 -- A subagent's depth is kept in a file named after its terminal, since
 -- that's all spawn.lua knows about whoever runs it. Agents the user starts
@@ -45,11 +41,7 @@ local prompt, result = lib.path("tasks", task_id, "prompt.md"), lib.path("tasks"
 lib.mkdir(task_dir)
 lib.mkdir(lib.path("depth"))
 
--- The kickoff carries the naming rule itself. Rex tells new agents to name
--- their session before doing anything else, which would come before the prompt.
-local kickoff = "You are a subagent. Never rename the Rex session; it belongs to the agent that started you. "
-  .. 'If asked to name your session, name your tab instead and keep the arrow: rex window rename "↳ <name>". '
-  .. "Read " .. prompt .. " and follow it."
+local kickoff = "You are a subagent. " .. lib.rule .. " Read " .. prompt .. " and follow it."
 local argv, placed = {}, false
 for word in tostring(a.command):gmatch("%S+") do
   if word == "{prompt}" then word, placed = kickoff, true end
@@ -69,51 +61,22 @@ local created = lib.call("session.new_window", {
   },
 })
 local window, block = created.window_id, created.block_ids[1]
-
-local f = assert(io.open(depth_file(block), "w"))
-f:write(depth, "\n")
-f:close()
-
-local nesting = depth > 0
-  and ("You may start subagents of your own with the rex-teams skill, up to " .. depth .. " level(s) below you. Report only after they have reported to you.")
-  or "Do this task yourself. You can't start subagents."
+lib.write(depth_file(block), depth .. "\n")
 
 -- The notice spells out the parent's next steps, because a parent that
 -- compacted while the subagent worked may have lost the skill's instructions.
-local notify = lib.command("send.lua", "session=" .. session .. " block=" .. me
-  .. ' message="' .. task_id .. " STATUS. Read " .. result
-  .. ". If it's completed and checks out, close this subagent with: rex window close -s " .. session .. " " .. window
-  .. '. Then wait for any other subagents you started."')
-f = assert(io.open(prompt, "w"))
-f:write(task, [[
-
-
----
-
-## How to report back
-
-You are a subagent. Another agent started you in a Rex terminal and is waiting for your report.
-]], nesting, [[
-
-
-When you finish, or when you are stuck on a question only the parent or user can answer:
-
-1. Write ]], result, [[. Its first line must be exactly one of:
-   STATUS: completed
-   STATUS: failed
-   STATUS: blocked
-   Then write a short report: what you did, files you changed, how you verified it, and any question you need answered.
-2. Notify the parent by running this command (put your status in place of STATUS):
-   ]], notify, [[
-
-   If it fails with a sandbox or permission error, ask for permission to run it outside the sandbox.
-3. Stop and wait. The parent or the user may send follow-ups into this terminal. Handle each one, then repeat steps 1 and 2. Overwrite result.md each time.
-
-Don't notify the parent with progress updates. Notify it only when you finish or are blocked.
-]])
-f:close()
+local report = lib.read(lib.dir .. "report.md"):gsub("{(%w+)}", {
+  result = result,
+  notify = lib.send_command(session, me, task_id .. " STATUS. Read " .. result
+    .. ". If it's completed and checks out, close this subagent with: rex window close -s " .. session .. " " .. window
+    .. ". Then wait for any other subagents you started."),
+  nesting = depth > 0
+    and ("You may start subagents of your own with the rex-teams skill, up to " .. depth .. " level(s) below you. Report only after they have reported to you.")
+    or "Do this task yourself. You can't start subagents.",
+})
+lib.write(prompt, task .. "\n\n" .. report)
 
 print("task: " .. task_id)
 print("folder: " .. task_dir)
 print("tab: " .. window)
-print("message it: " .. lib.command("send.lua", "session=" .. session .. " block=" .. block .. ' message="MESSAGE"'))
+print("message it: " .. lib.send_command(session, block, "MESSAGE"))

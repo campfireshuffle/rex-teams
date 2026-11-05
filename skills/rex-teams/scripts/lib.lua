@@ -6,6 +6,11 @@ lib.windows = package.config:sub(1, 1) == "\\"
 lib.sep = lib.windows and "\\" or "/"
 lib.dir = debug.getinfo(1, "S").source:gsub("^@", ""):match("^(.*[/\\])")
 
+-- Rex tells every agent to name its session when its first task arrives.
+-- The session and its tabs belong to the user, and tab labels are how agents
+-- find each other, so every kickoff and message says this.
+lib.rule = "Don't rename the Rex session or your tab."
+
 -- Agent sandboxes usually let programs write to /tmp.
 lib.root = (lib.windows and os.getenv("TEMP") or "/tmp") .. lib.sep .. "rex-teams"
 
@@ -19,6 +24,19 @@ function lib.mkdir(path)
   assert(assert(rex.exec(argv)).ok, "can't make " .. path)
 end
 
+function lib.read(path)
+  local f = assert(io.open(path))
+  local text = f:read("*a")
+  f:close()
+  return text
+end
+
+function lib.write(path, text)
+  local f = assert(io.open(path, "w"))
+  f:write(text)
+  f:close()
+end
+
 function lib.call(method, args)
   return assert(rex.call(method, args))
 end
@@ -28,10 +46,14 @@ function lib.me()
   return assert(os.getenv("REX_SESSION"), "run this inside a Rex terminal"), os.getenv("REX_BLOCK")
 end
 
--- Every block in a session, with its tab and pane labels. A script must
--- attach to a session before it can act on it.
-function lib.blocks(session)
+-- A script must attach to a session before it can act on it.
+function lib.attach(session)
   lib.call("session.attach", { session_id = session })
+end
+
+-- Every block in a session, with its tab and pane labels.
+function lib.blocks(session)
+  lib.attach(session)
   local out = {}
   for _, window in ipairs(lib.call("session.view", { session_id = session }).windows) do
     local blocks = {}
@@ -54,7 +76,7 @@ end
 
 -- Paste one line into a terminal, then press Enter. A paste event lets the
 -- program tell the text from the Enter that submits it.
-function lib.type_line(session, block, text)
+function lib.paste_line(session, block, text)
   lib.call("block.event", { session_id = session, block_id = block, event = { type = "paste", payload = { text = text } } })
   for _, action in ipairs({ "press", "release" }) do
     lib.call("block.event", { session_id = session, block_id = block, event = { type = "key", payload = {
@@ -63,9 +85,9 @@ function lib.type_line(session, block, text)
   end
 end
 
--- How to run one of these scripts, for a message.
-function lib.command(script, pairs)
-  return 'rex do "' .. lib.dir .. script .. '" ' .. pairs
+-- The command that sends a message to a terminal, for pasting into prompts.
+function lib.send_command(session, block, message)
+  return 'rex do "' .. lib.dir .. 'send.lua" session=' .. session .. " block=" .. block .. ' message="' .. message .. '"'
 end
 
 return lib
