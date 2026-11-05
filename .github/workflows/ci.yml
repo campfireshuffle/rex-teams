@@ -16,7 +16,9 @@ jobs:
       - name: Check the scripts parse as Lua 5.1, the version Rex runs
         run: |
           sudo apt-get install -y -qq lua5.1
-          for f in skills/rex-teams/scripts/*.lua; do luac5.1 -p "$f"; done
+          for f in skills/rex-teams/scripts/*.lua tests/*.lua; do luac5.1 -p "$f"; done
+      - name: Test watchdog event ordering
+        run: lua5.1 tests/watch.lua
       - name: Check the skill's name matches its folder
         run: |
           name=$(sed -n 's/^name: //p' skills/rex-teams/SKILL.md)

@@ -29,10 +29,17 @@ Open agents in labeled tabs or panes, then talk to one:
 
 > Hi Chief, ask Marketer to create a launch video for my product. 
 
+### Scheduled wake-ups
+
+Ask your agent to wake itself later, or periodically, using the skill's [Rex timer recipe](skills/rex-teams/references/wake-up.md). The timer runs in a background Rex tab. Nothing extra needs installing.
+
+Spawned subagents also get a small exit watchdog. If a child exits without a valid initial report, it wakes the parent with an exit notice.
+
 ## Limits
 
 - If you're typing in a pane when a message lands, the message mixes into your draft.
-- A subagent that crashes before reporting wakes nobody.
+- The watchdog covers the initial report, not hangs or follow-up tasks. A child that writes its result but dies before notifying the parent can still leave the parent waiting.
+- Timers and watchdogs require their Rex session and worker processes to remain alive. They do not recover after a server restart.
 - Codex needs two settings in `~/.codex/config.toml`, so it can reach Rex and reply from the right tab:
 
 ```toml

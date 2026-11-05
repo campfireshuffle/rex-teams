@@ -80,3 +80,28 @@ print("task: " .. task_id)
 print("folder: " .. task_dir)
 print("tab: " .. window)
 print("message it: " .. lib.send_command(session, block, "MESSAGE"))
+
+-- Keep the watcher inside Rex, not in the parent's tool process. It subscribes
+-- and checks last_exit before acknowledging startup, so fast exits aren't lost.
+local ready_path = lib.path("tasks", task_id, "watch.ready")
+local watcher = lib.call("session.new_block", {
+  session_id = session,
+  label = "watch: " .. task_id,
+  flavor = "com.superlogical.terminal.shell",
+  options = { command = { "rex", "do", "-s", session, "--fail-fast", lib.dir .. "watch.lua",
+    "session=" .. session, "child=" .. block, "parent=" .. me,
+    "task=" .. task_id, "result=" .. result, "ready=" .. ready_path },
+    exit = { on_completion = true } },
+}).block_id
+print("watcher: " .. watcher)
+for _ = 1, 100 do
+  local ready = io.open(ready_path)
+  if ready then
+    ready:close()
+    os.remove(ready_path)
+    return
+  end
+  rex.sleep(0.1)
+end
+error("spawn: child was created, but its watchdog did not acknowledge startup. Don't spawn again. Inspect: rex capture -s "
+  .. session .. " -b " .. watcher, 0)

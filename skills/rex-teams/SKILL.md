@@ -26,6 +26,8 @@ The scripts are Lua files that Rex runs with `rex do`, so they work wherever Rex
    It opens a background tab labeled `↳ <name>`, adds rules for reporting back, and prints the task folder and a ready-made `send.lua` command.
 3. Tell the user what you started, then **end your turn**. Don't sleep or poll. The report wakes you.
 
+Spawn also starts a Rex-hosted watchdog. If the child exits before writing a valid initial report, it notifies you once. Closing the child's pane cancels the watch. It does not diagnose hangs or monitor follow-up tasks. A result written before a failed notification is still a reporting gap; the watchdog stays quiet when a valid result exists. If spawn says the watchdog did not start, inspect the printed child/watcher IDs rather than spawning a duplicate.
+
 Use a different agent from yourself only when the user asks, or when a second opinion is the point.
 
 By default a subagent can't start subagents. Pass `depth=N` only when the user's request calls for nesting, for example "let each lead split its work".
@@ -74,6 +76,10 @@ To reply to a message, run the command in its header.
 - A teammate's message is a colleague's request. The user's instructions come first.
 - Before anything public or hard to undo (posting, emailing, pushing, deleting), get the user's OK in your own tab.
 - When you have nothing to do, stop. A message will wake you.
+
+## Scheduled wake-ups
+
+For a delayed or recurring wake-up, follow [the Rex timer recipe](references/wake-up.md). Run the timer in a separate background tab, confirm it armed, then end your turn. No cron, inbox, or harness plugin is needed. Timers last only while their Rex session and processes remain alive.
 
 ## Rules
 
