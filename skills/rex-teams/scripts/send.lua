@@ -14,12 +14,6 @@ local message = tostring(assert(rex.args.message, 'usage: send.lua session=SESSI
 -- A newline would submit half the message.
 assert(not message:find("[\r\n]"), "the message must be one line; put longer text in a file and send its path")
 
-local my_session, my_block = lib.me()
-local from
-for _, b in ipairs(lib.blocks(my_session)) do
-  if b.id == my_block then from = lib.name(b) end
-end
-
-local reply = lib.send_command(my_session, my_block, "<reply>")
+local header = lib.header(lib.me())
 lib.attach(session)
-lib.paste_line(session, block, "[from " .. from .. ", who can't see this screen. " .. lib.rule .. " Reply by running: " .. reply .. "] " .. message)
+lib.paste_line(session, block, header .. message)

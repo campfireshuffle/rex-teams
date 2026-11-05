@@ -1,24 +1,31 @@
--- Run in a background Rex tab; session/block identify the agent to wake,
--- not the alarm's own pane. seconds is the delay or recurring interval.
+-- rex do <skill>/scripts/alarm.lua in=1200 message="Check the deployment"
+-- Use every=1800 to repeat. The target defaults to the calling agent.
 local lib = dofile(debug.getinfo(1, "S").source:gsub("^@", ""):match("^(.*[/\\])") .. "lib.lua")
-local args = rex.args
-assert(type(args.seconds) == "number" and args.seconds > 0, "seconds must be positive")
-assert(args.session and args.block, "session and block are required")
-assert(args.recurring == nil or type(args.recurring) == "boolean", "recurring must be true or false")
-assert(type(args.message) == "string" and not args.message:find("[\r\n]"), "message must be one line")
-lib.attach(args.session)
-rex.on("block_closed", function(ctx, ev)
-  if ctx.session_id == args.session and ev.block_id == args.block then rex.stop() end
-end)
--- Check after subscribing so target closure during startup isn't missed.
-local exists = false
-for _, block in ipairs(lib.call("session.list_blocks", { session_id = args.session }).blocks or {}) do
-  if block.block_id == args.block then exists = true end
+local a = rex.args
+local seconds = assert(a["in"] or a.every, "use in=SECONDS or every=SECONDS")
+assert(seconds > 0 and not (a["in"] and a.every), "use one positive interval")
+local message = tostring(assert(a.message, "message is required"))
+assert(not message:find("[\r\n]"), "the message must be one line")
+
+if not a.worker then
+  local from_session, from_block = lib.me()
+  local session, block = a.session or from_session, a.block or from_block
+  local header = lib.header(from_session, from_block)
+  lib.attach(session)
+  local alarm = lib.call("session.new_block", {
+    session_id = session,
+    label = "alarm",
+    flavor = "com.superlogical.terminal.shell",
+    options = { command = { "rex", "do", "-s", session, "--fail-fast", lib.dir .. "alarm.lua",
+      "worker=true", "session=" .. session, "block=" .. block,
+      (a.every and "every=" or "in=") .. seconds, "message=" .. header .. message } },
+  })
+  print("alarm: " .. alarm.block_id)
+  return
 end
-if not exists then rex.stop() end
-local schedule = args.recurring and rex.every or rex.after
-schedule(args.seconds, function()
-  lib.paste_line(args.session, args.block, "[alarm] " .. lib.rule .. " " .. args.message)
-  if not args.recurring then rex.stop() end
+
+lib.attach(a.session)
+local schedule = a.every and rex.every or rex.after
+schedule(seconds, function()
+  lib.paste_line(a.session, a.block, message)
 end)
-print("Alarm armed")

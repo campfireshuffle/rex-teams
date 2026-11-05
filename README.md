@@ -23,8 +23,6 @@ Ask your agent:
 
 > Have Codex review this diff and Pi check the docs, then merge their findings.
 
-Spawned subagents get a background exit watcher. It notifies the parent if the agent's process exits, including during follow-up work. Closing the child's tab cancels the watcher quietly.
-
 ### Teammates (Grok Bot style)
 
 Open agents in labeled tabs or panes, then talk to one:
@@ -37,13 +35,11 @@ Open agents in labeled tabs or panes, then talk to one:
 
 > Every 30 minutes, wake up and check Reddit.
 
-Alarms support a one-time delay or a repeating interval, not cron expressions or calendar schedules. They run in background Rex tabs; nothing extra needs installing.
-
 ## Limits
 
 - If you're typing in a pane when a message lands, the message mixes into your draft.
-- The exit watcher detects process exit, not a hung agent or a finished turn. A CLI that exits normally after reporting also produces an exit notice; this is not a crash diagnosis.
-- Alarms and exit watchers require their Rex session and worker processes to remain alive. They do not recover after a server restart.
+- A subagent that crashes before reporting wakes nobody.
+- Alarms stop if the Rex server restarts.
 - Codex needs two settings in `~/.codex/config.toml`, so it can reach Rex and reply from the right tab:
 
 ```toml

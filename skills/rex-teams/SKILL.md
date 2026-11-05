@@ -26,7 +26,7 @@ The scripts are Lua files that Rex runs with `rex do`, so they work wherever Rex
    It opens a background tab labeled `↳ <name>`, adds rules for reporting back, and prints the task folder and a ready-made `send.lua` command.
 3. Tell the user what you started, then **end your turn**. Don't sleep or poll. The report wakes you.
 
-Spawn also starts a background exit watcher. It notifies you once if the child's process exits, even if a report already exists. This covers follow-up work in the same pane without tracking tasks. Closing the child's pane cancels the watch quietly. An exit notice is not a failure diagnosis: a CLI may exit normally after reporting. For hangs or forgotten reports while the process is still alive, set a check-in alarm. If spawn says the watchdog did not start, inspect the printed child/watcher IDs rather than spawning a duplicate.
+For a long task, set a check-in alarm on yourself when you start the subagent.
 
 Use a different agent from yourself only when the user asks, or when a second opinion is the point.
 
@@ -46,7 +46,7 @@ It points to `result.md`, whose first line is `STATUS: completed`, `failed`, or 
 
 ### Follow up
 
-If the child is still open, send it another task with the printed `send.lua` command. It overwrites its report and notifies you again; the same exit watcher remains active.
+If the child is still open, send it another task with the printed `send.lua` command. It overwrites its report and notifies you again.
 
 If you closed it, find the saved conversation containing its kickoff, `Read <task folder>/prompt.md and follow it.`, and work out that CLI's resume command. Write the follow-up to a new task file, then use spawn again:
 
@@ -54,7 +54,7 @@ If you closed it, find the saved conversation containing its kickoff, `Read <tas
 rex do <skill>/scripts/spawn.lua name=<short-name> cwd=<dir> task=<follow-up file> command="<resume command>"
 ```
 
-This resumes the conversation in a new tab with a fresh report path and exit watcher. The new reporting instructions replace the old ones. When it reports, close the tab from the new report's command.
+This resumes the conversation in a new tab with a fresh report path. The new reporting instructions replace the old ones. When it reports, close the tab from the new report's command.
 
 ## Teammates
 
@@ -81,17 +81,13 @@ To reply to a message, run the command in its header.
 
 ## Alarms
 
-Run `alarm.lua` in a background tab, passing the **target agent's** session and block IDs:
-
 ```sh
-rex run -s <session ID> --label alarm --focus=false --json -- rex do -s <session ID> --fail-fast <skill>/scripts/alarm.lua session=<session ID> block=<target block ID> seconds=1200 message="Check in on the Marketer agent"
+rex do <skill>/scripts/alarm.lua in=1200 message="Check in on the Marketer agent"
 ```
 
-`seconds` is a one-time delay. Add `recurring=true` to repeat at that interval; use `seconds=1800` for every 30 minutes. Cron expressions and calendar schedules are not supported.
+Use `in=SECONDS` once or `every=SECONDS` to repeat. The target defaults to you; pass `session=` and `block=` to target another agent. Save the printed alarm block ID, then **end your turn**.
 
-Save the returned alarm block ID, capture it once to confirm `Alarm armed`, then **end your turn**. Cancel with `rex block close -s <session ID> <alarm block ID>`; list alarms with `rex block ls`.
-
-Nothing extra needs installing. The script must exist on the Rex host. Alarms stop when their target closes and do not survive session/server shutdown. Delivery uses the same terminal input as other messages: it can mix with drafts or approval prompts, and recurring messages may accumulate while an agent is busy.
+Cancel with `rex block close -s <session ID> <alarm block ID>`; list alarms with `rex block ls -s <session ID>`.
 
 ## Rules
 
