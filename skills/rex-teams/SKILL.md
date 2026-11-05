@@ -60,11 +60,10 @@ This resumes the conversation in a new tab with a fresh report path. The new rep
 
 Your teammates are the other labeled tabs and panes in your session, except `↳` tabs, which are subagents. The user may also tell you about teammates elsewhere.
 
-Find a teammate's block ID by its label, then message it by ID. Labels can change or repeat; IDs don't.
+List your team, then message a teammate by running the command printed next to its name, with your message in place of `<message>`. The command targets the teammate's block ID, because labels can change or repeat and IDs don't.
 
 ```sh
 rex do <skill>/scripts/team.lua
-rex do <skill>/scripts/send.lua session=<session ID> block=<block ID> message="<one line>"
 ```
 
 Your session ID is `$REX_SESSION` (`$env:REX_SESSION` in PowerShell).

@@ -1,4 +1,4 @@
--- List the agents in your Rex session, so you can message one by block ID.
+-- List the agents in your Rex session, each with the command that messages it.
 --
 --   rex do <skill>/scripts/team.lua
 --
@@ -8,5 +8,5 @@ local lib = dofile(debug.getinfo(1, "S").source:gsub("^@", ""):match("^(.*[/\\])
 
 local session, me = lib.me()
 for _, b in ipairs(lib.blocks(session)) do
-  print(b.id .. "  tab=" .. b.tab .. "  pane=" .. b.pane .. (b.id == me and "  (you)" or ""))
+  print(lib.name(b) .. "  " .. (b.id == me and "(you)" or lib.send_command(session, b.id, "<message>")))
 end
