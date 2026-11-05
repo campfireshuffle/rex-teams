@@ -6,7 +6,7 @@ lib.windows = package.config:sub(1, 1) == "\\"
 lib.sep = lib.windows and "\\" or "/"
 lib.dir = debug.getinfo(1, "S").source:gsub("^@", ""):match("^(.*[/\\])")
 
--- /tmp is writable from Codex's default sandbox.
+-- Agent sandboxes usually let programs write to /tmp.
 lib.root = (lib.windows and os.getenv("TEMP") or "/tmp") .. lib.sep .. "rex-teams"
 
 function lib.path(...)
@@ -52,11 +52,10 @@ function lib.name(block)
   return block.tab
 end
 
--- Type one line into a terminal, then press Enter.
+-- Paste one line into a terminal, then press Enter. A paste event lets the
+-- program tell the text from the Enter that submits it.
 function lib.type_line(session, block, text)
-  lib.call("block.method", { session_id = session, block_id = block, method = "write", args = { data = text } })
-  -- Codex can miss an Enter that arrives right after a long burst of text.
-  rex.sleep(0.5)
+  lib.call("block.event", { session_id = session, block_id = block, event = { type = "paste", payload = { text = text } } })
   for _, action in ipairs({ "press", "release" }) do
     lib.call("block.event", { session_id = session, block_id = block, event = { type = "key", payload = {
       key = "enter", mods = "", consumed_mods = "", text = "\r", unshifted_codepoint = 13, composing = false, action = action,

@@ -2,11 +2,10 @@
 --
 --   rex do <skill>/scripts/spawn.lua name=NAME cwd=DIR task=FILE command="AGENT [ARGS...]" [depth=N]
 --
--- command starts any agent CLI; its words are split on spaces. A {prompt}
+-- command starts the agent CLI; its words are split on spaces. A {prompt}
 -- word is replaced with the agent's first prompt; without one, the prompt
--- goes last, which suits claude, codex, and pi. For example:
--- command="gemini -i {prompt}". depth is how many levels of subagents it may
--- start below itself (default 0).
+-- goes last. depth is how many levels of subagents it may start below
+-- itself (default 0).
 local lib = dofile(debug.getinfo(1, "S").source:gsub("^@", ""):match("^(.*[/\\])") .. "lib.lua")
 local a = rex.args
 assert(a.name and a.cwd and a.task and a.command, 'usage: spawn.lua name=NAME cwd=DIR task=FILE command="AGENT [ARGS...]" [depth=N]')

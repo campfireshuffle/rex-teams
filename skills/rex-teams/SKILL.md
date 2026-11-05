@@ -18,10 +18,10 @@ The scripts are Lua files that Rex runs with `rex do`, so they work wherever Rex
 2. Run:
 
    ```sh
-   rex do <skill>/scripts/spawn.lua name=<short-name> cwd=<dir> task=<file> command="claude|codex|pi [agent options]"
+   rex do <skill>/scripts/spawn.lua name=<short-name> cwd=<dir> task=<file> command="<agent CLI and its options>"
    ```
 
-   For another agent CLI, put `{prompt}` where it takes its first prompt, for example `command="gemini -i {prompt}"`. Without `{prompt}`, the prompt goes last.
+   `command` is whatever starts the agent, split on spaces. Put `{prompt}` where the CLI takes its first prompt, for example `command="<agent> -i {prompt}"`. Without `{prompt}`, the prompt goes last.
 
    It opens a background tab labeled `↳ <name>`, adds rules for reporting back, and prints the task folder and a ready-made `send.lua` command.
 3. Tell the user what you started, then **end your turn**. Don't sleep or poll. The report wakes you.
@@ -44,13 +44,7 @@ It points to `result.md`, whose first line is `STATUS: completed`, `failed`, or 
 
 ### Follow up with a closed one
 
-Its conversation is saved by its agent. Find the log that contains its kickoff, `Read <task folder>/prompt.md and follow it.`, and reopen it in a new tab with a follow-up:
-
-| Agent | Find the log | Resume command |
-| --- | --- | --- |
-| claude | `grep -rlF '<kickoff>' ~/.claude/projects` | `claude --resume <log file name without .jsonl>` |
-| codex | `grep -rlF '<kickoff>' ${CODEX_HOME:-~/.codex}/sessions` | `codex resume <.payload.id from the log's first line>` |
-| pi | `grep -rlF '<kickoff>' ~/.pi/agent/sessions` | `pi --session <log path>` |
+Its conversation is saved by its agent CLI. Find the saved conversation that contains its kickoff, `Read <task folder>/prompt.md and follow it.`, work out that CLI's command for resuming it, and reopen it in a new tab with a follow-up:
 
 ```sh
 rex window new "↳ <name>" -s "$REX_SESSION" -c <its cwd> --focus=false --json -- <resume command> "<follow-up; remind it never to rename the Rex session, to overwrite result.md, and to report the same way>"
