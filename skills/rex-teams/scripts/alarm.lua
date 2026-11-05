@@ -10,11 +10,13 @@ assert(not message:find("[\r\n]"), "the message must be one line")
 if not a.worker then
   local from_session, from_block = lib.me()
   local session, block = a.session or from_session, a.block or from_block
-  local header = lib.header(from_session, from_block)
+  local header = session == from_session and block == from_block
+    and ("[alarm you set. " .. lib.rule .. "] ")
+    or lib.header(from_session, from_block)
   lib.attach(session)
   local alarm = lib.call("session.new_block", {
     session_id = session,
-    label = "alarm",
+    label = "alarm: " .. message:sub(1, 40),
     flavor = "com.superlogical.terminal.shell",
     options = { command = { "rex", "do", "-s", session, "--fail-fast", lib.dir .. "alarm.lua",
       "worker=true", "session=" .. session, "block=" .. block,

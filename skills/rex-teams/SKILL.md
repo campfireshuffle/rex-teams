@@ -8,7 +8,7 @@ description: Work with other agents inside Rex. Start Claude, Codex, Pi, or othe
 - **Subagents** are agents you start for a task, in `↳` tabs next to yours. They report back, and you close them.
 - **Teammates** are agents the user set up, in the other labeled tabs and panes of your session. They stay open.
 
-The scripts are Lua files that Rex runs with `rex do`, so they work wherever Rex does. Arguments are `key=value` pairs. Messages go through `send.lua`. It types one line into the other agent's terminal, which starts that agent's next turn, so nobody polls. Each message starts with a header naming the sender and the exact command for replying.
+The scripts are Lua files that Rex runs with `rex do`, so they work wherever Rex does. Arguments are `key=value` pairs. Messages go through `send.lua`. It types one line into the other agent's terminal, which starts that agent's next turn, so nobody polls. Messages to other agents start with a header naming the sender and the exact command for replying.
 
 ## Subagents
 
