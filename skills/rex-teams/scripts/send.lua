@@ -2,7 +2,8 @@
 --
 --   rex do <skill>/scripts/send.lua session=SESSION block=BLOCK message="MESSAGE"
 --
--- BLOCK is the block ID of the other agent's terminal; find it with team.lua.
+-- BLOCK is the block ID of the other agent's terminal. team.lua prints this
+-- command, filled in, for each agent in your session.
 -- The message arrives as
 --   [from <your name>, who can't see this screen. <rule> Reply by running: <command>] MESSAGE
 -- so the other agent knows who wrote and how to answer, even if it has never
