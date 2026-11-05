@@ -4,6 +4,8 @@
 
 A skill that lets coding agents in [Rex](https://rex.superlogical.com) start subagents, message long-running teammates, and set one-time or recurring alarms.
 
+This is an unofficial community skill. It isn't made by or affiliated with Superlogical, so please report bugs here, not to Rex.
+
 > [!TIP]
 > I expect Rex to do this better itself one day. When it does, delete the skill.
 
@@ -33,10 +35,12 @@ Open agents in labeled tabs or panes, then talk to one:
 
 > Check in on the Marketer agent in 20 minutes.
 
-> Every 30 minutes, wake up and check Reddit.
+> Every 10 minutes, check CI on my PR and stop once it's green.
 
 ## Limits
 
 - If you're typing in a pane when a message lands, the message mixes into your draft.
 - A subagent that crashes before reporting wakes nobody.
 - Alarms stop if the Rex server restarts.
+- `command=` splits on spaces, so quoted arguments and paths with spaces don't work.
+- Tested with Rex 0.1.0 (beta), Claude Code 2.1, Codex CLI 0.166 and Pi 1.5.
