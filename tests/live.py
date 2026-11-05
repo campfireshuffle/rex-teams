@@ -79,38 +79,38 @@ def main():
                 eventually(ready.exists)
                 return worker
 
-            # Extract the actual documented recipe so the test cannot drift from it.
-            doc = (ROOT / "skills/rex-teams/references/wake-up.md").read_text()
-            recipe = re.search(r"```lua\n(.*?)\n```", doc, re.S).group(1)
-            recipe = recipe.replace("<skill>", str(SCRIPTS.parent))
-            wake = tmp / "wake.lua"
-            wake.write_text(recipe)
-
-            def timer(path, text, seconds=0.3):
+            def timer(text, seconds=0.3, recurring=False):
                 # Matches the documented background-tab command, not a shell job.
                 result = json.loads(cli("run", "-s", session, "--label", "wake-up", "--focus=false", "--json", "--",
-                                        REX, "do", "-s", session, "--fail-fast", str(path),
+                                        REX, "do", "-s", session, "--fail-fast", str(SCRIPTS / "wake.lua"),
                                         "session=" + session, "block=" + parent,
-                                        "seconds=" + str(seconds), "message=" + text))
+                                        "seconds=" + str(seconds), "recurring=" + str(recurring).lower(), "message=" + text))
                 return result["block_ids"][0]
 
-            timer_id = timer(wake, "once")
+            for override in ({"seconds": "0"}, {"seconds": "-1"}, {"recurring": "yes"}, {"message": "two\nlines"}):
+                args = {"session": session, "block": parent, "seconds": "1", "message": "invalid", **override}
+                rejected = subprocess.run([REX, "--autostart=false", "do", "-s", session, "--fail-fast",
+                                           str(SCRIPTS / "wake.lua"), *[k + "=" + v for k, v in args.items()]],
+                                          text=True, capture_output=True, timeout=10)
+                assert rejected.returncode != 0 and "Wake-up armed" not in rejected.stdout
+            assert not received()
+            print("ok invalid timer arguments fail before arming")
+
+            timer_id = timer("once")
             eventually(lambda: received() == ["[scheduled wake-up] once"])
             eventually(lambda: not alive(timer_id))
-            print("ok one-shot recipe delivers once after creator returns and cleans up")
+            print("ok one-shot script delivers once after creator returns and cleans up")
 
-            recurring = tmp / "repeat.lua"
-            recurring.write_text(recipe.replace("rex.after(", "rex.every(").replace("  rex.stop()\n", ""))
-            timer_id = timer(recurring, "repeat", 0.8)
+            timer_id = timer("repeat", 0.8, recurring=True)
             eventually(lambda: sum("repeat" in m for m in received()) >= 2)
             close(timer_id)
             time.sleep(1)
             before = len(received())
             time.sleep(1)
             assert len(received()) == before
-            print("ok recurring recipe and explicit cancellation")
+            print("ok recurring script and explicit cancellation")
 
-            timer_id = timer(wake, "cancelled", 30)
+            timer_id = timer("cancelled", 30)
             close(timer_id)
             time.sleep(0.5)
             assert not any("cancelled" in m for m in received())
@@ -185,11 +185,11 @@ def main():
             # Target disappearance stops both kinds of worker.
             child = block(["/bin/sleep", "60"])
             worker = watch(child, tmp / "missing", "parent-gone")
-            timer_id = timer(recurring, "never", 60)
+            timer_id = timer("never", 60, recurring=True)
             close(parent)
             eventually(lambda: not alive(worker) and not alive(timer_id))
             print("ok parent closure cleans up watchdog and recurring timer")
-            timer_id = timer(wake, "gone", 60)
+            timer_id = timer("gone", 60)
             eventually(lambda: not alive(timer_id))
             worker = watch(child, tmp / "missing", "parent-already-gone")
             eventually(lambda: not alive(worker))

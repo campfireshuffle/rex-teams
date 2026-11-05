@@ -79,7 +79,15 @@ To reply to a message, run the command in its header.
 
 ## Scheduled wake-ups
 
-For a delayed or recurring wake-up, follow [the Rex timer recipe](references/wake-up.md). Run the timer in a separate background tab, confirm it armed, then end your turn. No cron, inbox, or harness plugin is needed. Timers last only while their Rex session and processes remain alive.
+Run `wake.lua` in a background tab, passing the **target agent's** session and block IDs:
+
+```sh
+rex run -s <session ID> --label wake-up --focus=false --json -- rex do -s <session ID> --fail-fast <skill>/scripts/wake.lua session=<session ID> block=<target block ID> seconds=1200 message="Check the deployment"
+```
+
+Add `recurring=true` to repeat at that interval. Save the returned timer block ID, capture it once to confirm `Wake-up armed`, then **end your turn**. Cancel with `rex block close -s <session ID> <timer block ID>`; list timers with `rex block ls`.
+
+No scheduler installation is needed. The script must exist on the Rex host. Timers stop when their target closes and do not survive session/server shutdown. Delivery uses the same terminal input as other messages: it can mix with drafts or approval prompts, and recurring messages may accumulate while an agent is busy.
 
 ## Rules
 

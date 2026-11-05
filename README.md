@@ -31,7 +31,7 @@ Open agents in labeled tabs or panes, then talk to one:
 
 ### Scheduled wake-ups
 
-Ask your agent to wake itself later, or periodically, using the skill's [Rex timer recipe](skills/rex-teams/references/wake-up.md). The timer runs in a background Rex tab. Nothing extra needs installing.
+Ask your agent to wake itself later, or periodically. The skill's `wake.lua` script runs in a background Rex tab. Nothing extra needs installing.
 
 Spawned subagents also get a small exit watchdog. If a child exits without a valid initial report, it wakes the parent with an exit notice.
 
