@@ -12,12 +12,28 @@ Rex already gives agents everything this skill needs: tabs, `rex send`, and `rex
 ## Install
 
 ```sh
-npx skills add campfireshuffle/rex-teams -g -a claude-code -a codex -a pi
+npx skills add campfireshuffle/rex-teams
 ```
 
-It needs `rex` and `jq`. Tested with Claude Code, Codex, and Pi. Other agent CLIs work as subagents too: put `{prompt}` where the CLI takes its first prompt.
+## Usage patterns 
 
-Codex needs two settings in `~/.codex/config.toml`, so it can reach Rex and reply from the right tab:
+### Subagents
+
+Ask your agent:
+
+> Have Codex review this diff and Pi check the docs, then merge their findings.
+
+### Teammates (Grok Bot style)
+
+Open agents in labeled tabs or panes, then talk to one:
+
+> Hi Chief, ask Marketer to create a launch video for my product. 
+
+## Limits
+
+- If you're typing in a pane when a message lands, the message mixes into your draft.
+- A subagent that crashes before reporting wakes nobody.
+- Codex needs two settings in `~/.codex/config.toml`, so it can reach Rex and reply from the right tab:
 
 ```toml
 [sandbox_workspace_write]
@@ -26,32 +42,3 @@ network_access = true
 [features]
 daemon_auto_start = false
 ```
-
-## Use
-
-Subagents. Ask your agent:
-
-> Have Codex review this diff and Pi check the docs, then merge their findings.
-
-Teammates. Open agents in labeled tabs or panes, tell each one who the others are, then talk to one:
-
-```sh
-rex session new crew --window team -- claude
-rex block rename -s crew chief
-rex split -s crew --label eng --split right -- codex
-rex split -s crew --label qa  --split right -- pi
-```
-
-## Limits
-
-- If you're typing in a pane when a message lands, the message mixes into your draft.
-- A subagent that crashes before reporting wakes nobody.
-- It's meant for a handful of agents you can watch.
-
-## Remove
-
-```sh
-npx skills remove rex-teams -g
-```
-
-[MIT](LICENSE)
