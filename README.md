@@ -43,4 +43,4 @@ Open agents in labeled tabs or panes, then talk to one:
 - A subagent that crashes before reporting wakes nobody.
 - Alarms stop if the Rex server restarts.
 - `command=` splits on spaces, so quoted arguments and paths with spaces don't work.
-- Tested with Rex 0.1.0 (beta), Claude Code 2.1, Codex CLI 0.166 and Pi 1.5.
+- Tested with Rex 0.1.0 (beta), Claude Code 2.1, Codex CLI 0.166, Pi 1.5 and OpenCode 2.2.
