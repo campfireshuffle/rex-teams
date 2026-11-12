@@ -49,11 +49,30 @@ for word in tostring(a.command):gmatch("%S+") do
 end
 if not placed then argv[#argv + 1] = kickoff end
 
+-- A subagent's tab gets one more ↳ than its parent's, so the tab bar reads
+-- like a tree.
+local function level(label)
+  local n = 0
+  while (label or ""):find("^↳", n * #"↳" + 1) do n = n + 1 end
+  return n
+end
+local windows = lib.call("session.view", { session_id = session }).windows
+local parent
+for i, w in ipairs(windows) do
+  for _, layer in ipairs(w.layers) do
+    for _, b in ipairs(layer.blocks) do
+      if b.block_id == me then parent = i end
+    end
+  end
+end
+local parent_level = parent and level(windows[parent].label) or 0
+local label = ("↳"):rep(parent_level + 1) .. " " .. a.name
+
 -- Open the tab first: the report needs its ID. The agent takes seconds to
 -- start, so the prompt exists by the time it reads it.
 local created = lib.call("session.new_window", {
   session_id = session,
-  window_label = "↳ " .. a.name,
+  window_label = label,
   focus = false,
   layout = rex.layout.block{
     flavor = "com.superlogical.terminal.shell",
@@ -75,6 +94,18 @@ local report = lib.read(lib.dir .. "report.md"):gsub("{(%w+)}", {
     or "Do this task yourself. You can't start subagents.",
 })
 lib.write(prompt, task .. "\n\n" .. report)
+
+-- Rex adds new tabs at the end. Move this one after the parent and the
+-- subagents already under it (the deeper tabs that follow it). This runs last
+-- and may fail, for example if that tab just closed: the tab then stays at
+-- the end, and the subagent still has everything it needs.
+local next_tab = (parent or #windows) + 1
+while windows[next_tab] and level(windows[next_tab].label) > parent_level do
+  next_tab = next_tab + 1
+end
+if windows[next_tab] then
+  rex.call("session.move_window", { session_id = session, window_id = window, before_window_id = windows[next_tab].window_id })
+end
 
 print("task: " .. task_id)
 print("folder: " .. task_dir)
