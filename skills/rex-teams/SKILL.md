@@ -23,7 +23,9 @@ The scripts are Lua files that Rex runs with `rex do`, so they work wherever Rex
 
    `command` is whatever starts the agent, split on spaces. Put `{prompt}` where the CLI takes its first prompt, for example `command="<agent> -i {prompt}"`. Without `{prompt}`, the prompt goes last.
 
-   It opens a background tab labeled `↳ <name>`, adds rules for reporting back, and prints the task folder and a ready-made `send.lua` command.
+   It opens a background tab labeled `↳ <name>` next to yours, adds rules for reporting back, and prints the task folder and a ready-made `send.lua` command. A subagent's own subagents get `↳↳`.
+
+   Run spawns one at a time, not in the background. Each returns in under a second, the agents still work in parallel, and their tabs stay in order.
 3. Tell the user what you started, then **end your turn**. Don't sleep or poll. The report wakes you.
 
 For a long task, set a check-in alarm on yourself when you start the subagent.
@@ -50,7 +52,7 @@ If the child is still open, send it another task with the printed `send.lua` com
 
 Use the `message it:` command, not the `tab:` ID. A window ID can't receive messages. Lost it? Run `team.lua`.
 
-If you closed it, find the saved conversation containing its kickoff, `Read <task folder>/prompt.md and follow it.`, and work out that CLI's resume command. Write the follow-up to a new task file, then use spawn again:
+If you closed it, find the saved conversation that starts with its kickoff, `Read <task folder>/prompt.md and follow it.`, and work out that CLI's resume command. Write the follow-up to a new task file, then use spawn again:
 
 ```sh
 rex do <skill>/scripts/spawn.lua name=<short-name> cwd=<dir> task=<follow-up file> command="<resume command>"
