@@ -48,6 +48,8 @@ It points to `result.md`, whose first line is `STATUS: completed`, `failed`, or 
 
 If the child is still open, send it another task with the printed `send.lua` command. It overwrites its report and notifies you again.
 
+Use the `message it:` command, not the `tab:` ID. A window ID can't receive messages. Lost it? Run `team.lua`.
+
 If you closed it, find the saved conversation containing its kickoff, `Read <task folder>/prompt.md and follow it.`, and work out that CLI's resume command. Write the follow-up to a new task file, then use spawn again:
 
 ```sh
