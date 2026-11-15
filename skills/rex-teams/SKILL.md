@@ -23,7 +23,7 @@ The scripts are Lua files that Rex runs with `rex do`, so they work wherever Rex
 
    `command` is whatever starts the agent, split on spaces. Put `{prompt}` where the CLI takes its first prompt, for example `command="<agent> -i {prompt}"`. Without `{prompt}`, the prompt goes last.
 
-   It opens a background tab labeled `↳ <name>` next to yours, adds rules for reporting back, and prints the task folder and a ready-made `send.lua` command. A subagent's own subagents get `↳↳`.
+   It opens a background tab labeled `↳ <name>` next to yours, adds rules for reporting back, and prints the task folder and a ready-made `send.lua` command. Nested subagents keep a single `↳`, indented four more spaces per generation. An invisible zero-width marker preserves leading spaces in Rex.
 
    Run spawns one at a time, not in the background. Each returns in under a second, the agents still work in parallel, and their tabs stay in order.
 3. Tell the user what you started, then **end your turn**. Don't sleep or poll. The report wakes you.
@@ -62,7 +62,7 @@ This resumes the conversation in a new tab with a fresh report path. The new rep
 
 ## Teammates
 
-Your teammates are the other labeled tabs and panes in your session, except `↳` tabs, which are subagents. The user may also tell you about teammates elsewhere.
+Your teammates are the other labeled tabs and panes in your session, except tabs prefixed with a possibly indented `↳`, which are subagents. The user may also tell you about teammates elsewhere.
 
 List your team, then message a teammate by running the command printed next to its name, with your message in place of `<message>`. The command targets the teammate's block ID, because labels can change or repeat and IDs don't.
 

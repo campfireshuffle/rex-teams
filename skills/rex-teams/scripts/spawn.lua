@@ -49,12 +49,11 @@ for word in tostring(a.command):gmatch("%S+") do
 end
 if not placed then argv[#argv + 1] = kickoff end
 
--- A subagent's tab gets one more ↳ than its parent's, so the tab bar reads
--- like a tree.
+-- Rex trims leading whitespace; a zero-width space preserves the indent.
+local indent_marker = "\226\128\139"
 local function level(label)
-  local n = 0
-  while (label or ""):find("^↳", n * #"↳" + 1) do n = n + 1 end
-  return n
+  local indent = (label or ""):gsub("^" .. indent_marker, ""):match("^( *)↳")
+  return indent and #indent / 4 + 1 or 0
 end
 local windows = lib.call("session.view", { session_id = session }).windows
 local parent
@@ -66,7 +65,7 @@ for i, w in ipairs(windows) do
   end
 end
 local parent_level = parent and level(windows[parent].label) or 0
-local label = ("↳"):rep(parent_level + 1) .. " " .. a.name
+local label = indent_marker .. ("    "):rep(parent_level) .. "↳ " .. a.name
 
 -- Open the tab first: the report needs its ID. The agent takes seconds to
 -- start, so the prompt exists by the time it reads it.

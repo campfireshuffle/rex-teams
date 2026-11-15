@@ -2,7 +2,7 @@
 --
 --   rex do <skill>/scripts/team.lua
 --
--- Tabs starting with ↳ are subagents. Teammates are the other labeled tabs
+-- Tabs prefixed with a possibly indented ↳ are subagents. Teammates are the other labeled tabs
 -- and panes.
 local lib = dofile(debug.getinfo(1, "S").source:gsub("^@", ""):match("^(.*[/\\])") .. "lib.lua")
 
