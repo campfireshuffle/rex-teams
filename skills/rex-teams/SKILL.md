@@ -57,6 +57,8 @@ It points to `result.md`, whose first line is `STATUS: completed`, `failed`, or 
 
 Closing a tab does not remove its worktree. Preserve it until changes are reviewed and integrated; never force-remove dirty work. Keep the worktree if spawning fails, too.
 
+Before your final report, review the worktrees you created: propose removing any that are no longer needed, and list those you're retaining and why.
+
 ### Follow up
 
 If the child is still open, send it another task with the printed `send.lua` command. It overwrites its report and notifies you again.
