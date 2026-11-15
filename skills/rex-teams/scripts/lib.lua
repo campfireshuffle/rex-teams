@@ -41,6 +41,21 @@ function lib.call(method, args)
   return assert(rex.call(method, args))
 end
 
+-- Git runs on the machine running this script, like the task files.
+function lib.worktree(cwd)
+  local opts = { timeout = 2, env = { GIT_DIR = false, GIT_WORK_TREE = false, GIT_COMMON_DIR = false } }
+  local r = rex.exec({ "git", "-C", cwd, "rev-parse", "--absolute-git-dir", "--path-format=absolute", "--git-common-dir", "--show-toplevel" }, opts)
+  if not r or not r.ok then return end
+  local gitdir, common, root = r.stdout:gsub("\r\n", "\n"):match("^([^\n]+)\n([^\n]+)\n([^\n]+)\n$")
+  if not root or gitdir == common then return end
+  local branch = rex.exec({ "git", "-C", cwd, "symbolic-ref", "--quiet", "--short", "HEAD" }, opts)
+  return {
+    path = root,
+    branch = branch and branch.ok and branch.stdout:gsub("[\r\n]+$", "")
+      or (branch and branch.code == 1 and "detached HEAD" or "unknown"),
+  }
+end
+
 -- The agent running this script.
 function lib.me()
   return assert(os.getenv("REX_SESSION"), "run this inside a Rex terminal"), os.getenv("REX_BLOCK")

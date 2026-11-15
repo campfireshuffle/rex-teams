@@ -27,6 +27,8 @@ Ask your agent:
 
 > Have Codex review this diff and Pi check the docs, then merge their findings.
 
+Parallel coding agents use separate Git worktrees. Their tabs show `↳ task (w)`; launch output and the team listing show the branch and checkout path without crowding the tab. Parents handle integration and cleanup. Closing a tab leaves the worktree intact.
+
 ### Teammates (Grok Bot style)
 
 Open agents in labeled tabs or panes, then talk to one:

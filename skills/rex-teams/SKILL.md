@@ -14,7 +14,7 @@ The scripts are Lua files that Rex runs with `rex do`, so they work wherever Rex
 
 ### Start one
 
-1. Write a self-contained task file. The subagent sees none of your conversation. Include the goal, the scope, what it may change, how to verify, and what to put in the report.
+1. Choose the checkout using **Worktrees** below, then write a self-contained task file. The subagent sees none of your conversation. Include the goal, scope, what it may change, starting base, whether it may commit, how to verify, and what to put in the report.
 2. Run:
 
    ```sh
@@ -25,7 +25,9 @@ The scripts are Lua files that Rex runs with `rex do`, so they work wherever Rex
 
    It opens a background tab labeled `↳ <name>` next to yours, adds rules for reporting back, and prints the task folder and a ready-made `send.lua` command. Nested subagents keep a single `↳`, indented four more spaces per generation. An invisible zero-width marker preserves leading spaces in Rex.
 
-   Run spawns one at a time, not in the background. Each returns in under a second, the agents still work in parallel, and their tabs stay in order.
+   A linked Git worktree adds ` (w)` to the tab label. The branch and path appear in the launch output and `team.lua`, not the tab. The marker reflects the checkout at launch, not exclusive ownership. Git inspection runs on the machine running the scripts; use them on the same host as the checkout.
+
+   Run spawns one at a time, not in the background. The agents still work in parallel, and sequential spawns keep their tabs in order.
 3. Tell the user what you started, then **end your turn**. Don't sleep or poll. The report wakes you.
 
 For a long task, set a check-in alarm on yourself when you start the subagent.
@@ -34,9 +36,16 @@ Use a different agent from yourself only when the user asks, or when a second op
 
 By default a subagent can't start subagents. Pass `depth=N` only when the user's request calls for nesting, for example "let each lead split its work".
 
+### Worktrees
+
+- If a child will edit code while you or another agent may edit the same checkout, create a separate Git worktree for the child **before** spawning. Use its path as `cwd`. Different files still share a branch and index, so they aren't enough isolation.
+- Read-only research and reviews can share a checkout. A lone writer can use the existing checkout unless the task needs isolation. Follow an explicit user preference.
+- Worktrees start from committed refs. If the child needs your uncommitted changes, ask how to provide that baseline; don't silently stash, commit, or copy them.
+- You own creation, assignment, integration, and cleanup. Never reuse another writer's worktree. Nested agents follow the same rule; inheriting a worktree doesn't make it exclusive.
+
 ### Several at once
 
-Start all independent subagents in one go. Ones that edit the same files need separate `git worktree`s. As each report arrives, handle it and end your turn quietly. When the last one is in, give the user one combined answer. A subagent has reported once its `result.md` exists.
+Start all independent subagents in one go. As each report arrives, handle it and end your turn quietly. When the last one is in, give the user one combined answer. A subagent has reported once its `result.md` exists.
 
 ### When a report arrives
 
@@ -45,6 +54,8 @@ It points to `result.md`, whose first line is `STATUS: completed`, `failed`, or 
 - `completed`: check the claims that matter, then close the tab, unless you expect a follow-up soon.
 - `blocked`: answer with the reply command from the header, or ask the user.
 - `failed`: tell the user. Leave the tab open.
+
+Closing a tab does not remove its worktree. Preserve it until changes are reviewed and integrated; never force-remove dirty work. Keep the worktree if spawning fails, too.
 
 ### Follow up
 
@@ -58,7 +69,7 @@ If you closed it, find the saved conversation that starts with its kickoff, `Rea
 rex do <skill>/scripts/spawn.lua name=<short-name> cwd=<dir> task=<follow-up file> command="<resume command>"
 ```
 
-This resumes the conversation in a new tab with a fresh report path. The new reporting instructions replace the old ones. When it reports, close the tab from the new report's command.
+Use the retained worktree as `cwd` when resuming work that needs its changes. This resumes the conversation in a new tab with a fresh report path. The new reporting instructions replace the old ones. When it reports, close the tab from the new report's command.
 
 ## Teammates
 

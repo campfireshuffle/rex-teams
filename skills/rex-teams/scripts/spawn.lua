@@ -29,6 +29,7 @@ end
 -- Resolve cwd the way a program in this terminal would, so . and ~ work.
 local dir = lib.call("block.method", { session_id = session, block_id = me, method = "list_dir", args = { path = tostring(a.cwd), limit = 1 } })
 assert(dir.status == "ok", tostring(a.cwd) .. " isn't a folder")
+local worktree = lib.worktree(dir.path)
 
 -- Every parent shares the folder, so a random suffix keeps two subagents
 -- with the same name apart.
@@ -65,7 +66,7 @@ for i, w in ipairs(windows) do
   end
 end
 local parent_level = parent and level(windows[parent].label) or 0
-local label = indent_marker .. ("    "):rep(parent_level) .. "↳ " .. a.name
+local label = indent_marker .. ("    "):rep(parent_level) .. "↳ " .. a.name .. (worktree and " (w)" or "")
 
 -- Open the tab first: the report needs its ID. The agent takes seconds to
 -- start, so the prompt exists by the time it reads it.
@@ -85,6 +86,8 @@ lib.write(depth_file(block), depth .. "\n")
 -- compacted while the subagent worked may have lost the skill's instructions.
 local report = lib.read(lib.dir .. "report.md"):gsub("{(%w+)}", {
   result = result,
+  checkout = dir.path,
+  worktree = worktree and ("Linked worktree: " .. worktree.path .. "\nBranch at launch: " .. worktree.branch) or "",
   notify = lib.send_command(session, me, task_id .. " STATUS. Read " .. result
     .. ". If it's completed and checks out, close this subagent with: rex window close -s " .. session .. " " .. window
     .. ". Then wait for any other subagents you started."),
@@ -109,4 +112,8 @@ end
 print("task: " .. task_id)
 print("folder: " .. task_dir)
 print("tab: " .. window)
+if worktree then
+  print("branch: " .. worktree.branch)
+  print("worktree: " .. worktree.path)
+end
 print("message it: " .. lib.send_command(session, block, "MESSAGE"))
