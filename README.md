@@ -2,7 +2,7 @@
 
 ![Claude starts three subagents in Rex, and they run side by side](media/hero.webp)
 
-Run subagents inside Superlogical's [Rex terminal](https://rex.superlogical.com), across agent harnesses. Rex Teams lets a parent agent spawn Claude Code, Codex, Pi, or OpenCode in background tabs, receive their reports, and close completed tabs.
+Run subagents inside Superlogical's [Rex terminal](https://rex.superlogical.com), across agent harnesses. Rex Teams lets a parent agent spawn Claude Code, Codex, Pi, OpenCode, or other agent CLIs in background tabs, receive their reports, and close completed tabs.
 
 The skill also lets agents message long-running teammates and set one-time or recurring alarms.
 
