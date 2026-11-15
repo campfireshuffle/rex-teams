@@ -2,7 +2,9 @@
 
 ![Claude starts three subagents in Rex, and they run side by side](media/hero.webp)
 
-A skill that lets coding agents in [Rex](https://rex.superlogical.com) start subagents, message long-running teammates, and set one-time or recurring alarms.
+Run subagents inside Superlogical's [Rex terminal](https://rex.superlogical.com), across agent harnesses. Rex Teams lets a parent agent spawn Claude Code, Codex, Pi, or OpenCode in background tabs, receive their reports, and close completed tabs.
+
+The skill also lets agents message long-running teammates and set one-time or recurring alarms.
 
 This is an unofficial community skill. It isn't made by or affiliated with Superlogical, so please report bugs here, not to Rex.
 
