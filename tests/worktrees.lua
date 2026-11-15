@@ -60,6 +60,21 @@ check("linked root and nested cwd with spaces", function()
     assert(w.path == canonical and w.branch == "agents/fix-auth")
   end
 end)
+check("worktree probes explicitly clear inherited Git selectors", function()
+  local probes = {}
+  rex.exec = function(argv, opts)
+    local env = opts and opts.env or {}
+    for _, key in ipairs({ "GIT_DIR", "GIT_WORK_TREE", "GIT_COMMON_DIR" }) do
+      assert(env[key] == false, "worktree probe must remove " .. key)
+    end
+    probes[argv[4]] = true
+    return exec(argv, opts)
+  end
+  local w = assert(lib.worktree(linked .. "/nested folder"))
+  rex.exec = exec
+  assert(w.path == canonical and w.branch == "agents/fix-auth")
+  assert(probes["rev-parse"] and probes["symbolic-ref"])
+end)
 check("separate git-dir is not a linked worktree", function()
   local separate = root .. "/separate"
   command("git", "init", "-q", "--separate-git-dir", root .. "/git data", separate)
