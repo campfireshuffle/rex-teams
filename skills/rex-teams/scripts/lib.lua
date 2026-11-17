@@ -165,14 +165,16 @@ function lib.header(from_session, from_block, cross)
     if block.id == from_block then from = lib.name(block) end
   end
   local reply = lib.send_command(from_block, "<reply>")
+  local lead = " Reply by running: "
   if cross then
     local name = rex.exec({ "hostname" })
     from = from .. " on " .. (name and name.ok and name.stdout:match("^%s*(.-)%s*$") or "another Rex host")
     local id = lib.call("server.status", {}).host_id
     reply = id and lib.send_command(from_block, "<reply>", id, "<rex-teams skill>/scripts/send.lua")
+    lead = " Reply by running, with your rex-teams skill's path filled in: "
   end
   return "[from " .. from .. ", who can't see this screen. " .. lib.rule
-    .. (reply and " Reply by running: " .. reply or "") .. "] "
+    .. (reply and lead .. reply or "") .. "] "
 end
 
 return lib

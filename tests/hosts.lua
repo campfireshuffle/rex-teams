@@ -223,7 +223,7 @@ check("a cross-host header names this host and replies by host_id", function()
   assert(run("send.lua", { host = "ws", block = "cccccc", message = "hi" }))
   local text = assert(pasted[1]).text
   assert(has(text, "[from Chief on mac-host, who can't see this screen. "), text)
-  assert(has(text, " Reply by running: rex do <rex-teams skill>/scripts/send.lua host='id-mac' block='block:me-000000-aaaaaa' message='<reply>'] hi"), text)
+  assert(has(text, " Reply by running, with your rex-teams skill's path filled in: rex do <rex-teams skill>/scripts/send.lua host='id-mac' block='block:me-000000-aaaaaa' message='<reply>'] hi"), text)
   reset()
   assert(run("send.lua", { block = "Helper", message = "hi" }))
   text = pasted[1].text

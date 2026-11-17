@@ -8,6 +8,7 @@
 -- command, filled in, for each agent.
 -- The message arrives as
 --   [from <your name>, who can't see this screen. <rule> Reply by running: <command>] MESSAGE
+-- Across hosts, the header adds `on <hostname>` and a reply hint with host='<host_id>'.
 -- so the other agent knows who wrote and how to answer, even if it has never
 -- heard of this skill. Without "can't see this screen", agents tend to answer
 -- in their own pane, where nobody reads it.

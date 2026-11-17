@@ -88,7 +88,7 @@ check("a host_id and a cross-host reply run as written once the script path is f
   end
   rex = { call = function() return { host_id = id } end, exec = function() return { ok = true, stdout = "box\n" } end }
   local header = lib.header("session:test", "block:b1", true)
-  local reply = assert(header:match("Reply by running: (.*)%] $"))
+  local reply = assert(header:match("Reply by running, with your rex%-teams skill's path filled in: (.*)%] $"))
   local path = lib.quote(lib.dir .. "send.lua")
   arrives((reply:gsub("<rex%-teams skill>/scripts/send%.lua", function() return path end)), "<reply>", id)
 end)
