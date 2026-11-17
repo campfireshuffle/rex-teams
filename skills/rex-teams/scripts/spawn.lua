@@ -39,6 +39,7 @@ for _ = 1, 4 do suffix = suffix .. string.char(math.random(97, 122)) end
 local task_id = a.name .. "-" .. os.date("%Y%m%d-%H%M%S") .. "-" .. suffix
 local task_dir = lib.path("tasks", task_id)
 local prompt, result = lib.path("tasks", task_id, "prompt.md"), lib.path("tasks", task_id, "result.md")
+local close_file = lib.path("tasks", task_id, "close.md")
 lib.mkdir(task_dir)
 lib.mkdir(lib.path("depth"))
 
@@ -68,8 +69,27 @@ end
 local parent_level = parent and level(windows[parent].label) or 0
 local label = indent_marker .. ("    "):rep(parent_level) .. "↳ " .. a.name .. (worktree and " (w)" or "")
 
--- Open the tab first: the report needs its ID. The agent takes seconds to
--- start, so the prompt exists by the time it reads it.
+-- The notice spells out the parent's next steps, because a parent that
+-- compacted while the subagent worked may have lost the skill's instructions.
+local report = lib.read(lib.dir .. "report.md"):gsub("{(%w+)}", {
+  result = result,
+  checkout = dir.path,
+  worktree = worktree and ("Linked worktree: " .. worktree.path .. "\nBranch at launch: " .. worktree.branch) or "",
+  notify = lib.send_command(session, me, task_id .. " STATUS. Read " .. result
+    .. ". If it's completed and checks out, run the close command in " .. close_file
+    .. ". Then wait for any other subagents you started."),
+  nesting = depth > 0
+    and ("You may start subagents of your own with the rex-teams skill, up to " .. depth .. " level(s) below you. Report only after they have reported to you.")
+    or "Do this task yourself. You can't start subagents.",
+})
+local function write(path, text)
+  local file = assert(io.open(path, "w"))
+  assert(file:write(text))
+  assert(file:close())
+end
+-- A child can read immediately when new_window starts its command.
+write(prompt, task .. "\n\n" .. report)
+
 local created = lib.call("session.new_window", {
   session_id = session,
   window_label = label,
@@ -80,22 +100,8 @@ local created = lib.call("session.new_window", {
   },
 })
 local window, block = created.window_id, created.block_ids[1]
+write(close_file, "rex window close -s " .. session .. " " .. window .. "\n")
 lib.write(depth_file(block), depth .. "\n")
-
--- The notice spells out the parent's next steps, because a parent that
--- compacted while the subagent worked may have lost the skill's instructions.
-local report = lib.read(lib.dir .. "report.md"):gsub("{(%w+)}", {
-  result = result,
-  checkout = dir.path,
-  worktree = worktree and ("Linked worktree: " .. worktree.path .. "\nBranch at launch: " .. worktree.branch) or "",
-  notify = lib.send_command(session, me, task_id .. " STATUS. Read " .. result
-    .. ". If it's completed and checks out, close this subagent with: rex window close -s " .. session .. " " .. window
-    .. ". Then wait for any other subagents you started."),
-  nesting = depth > 0
-    and ("You may start subagents of your own with the rex-teams skill, up to " .. depth .. " level(s) below you. Report only after they have reported to you.")
-    or "Do this task yourself. You can't start subagents.",
-})
-lib.write(prompt, task .. "\n\n" .. report)
 
 -- Rex adds new tabs at the end. Move this one after the parent and the
 -- subagents already under it (the deeper tabs that follow it). This runs last
