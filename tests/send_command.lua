@@ -37,10 +37,10 @@ local function argv(command)
 end
 local function arrives(command, message)
   local words = argv(command)
-  assert(#words == 5, "expected 5 words, got " .. #words .. ": " .. command)
+  assert(#words == 4, "expected 4 words, got " .. #words .. ": " .. command)
   assert(words[1] == "do" and words[2] == lib.dir .. "send.lua", "script path changed: " .. tostring(words[2]))
-  assert(words[3] == "session=session:test" and words[4] == "block=block:b1")
-  assert(words[5] == "message=" .. message, "message changed: " .. tostring(words[5]))
+  assert(words[3] == "block=block:b1")
+  assert(words[4] == "message=" .. message, "message changed: " .. tostring(words[4]))
   assert(not io.open(canary), "the shell ran text from the command")
 end
 
@@ -61,12 +61,12 @@ local tricky = {
 }
 check("messages and script paths arrive literally through /bin/sh", function()
   for _, message in ipairs(tricky) do
-    arrives(lib.send_command("session:test", "block:b1", message), message)
+    arrives(lib.send_command("block:b1", message), message)
   end
 end)
 check("agents can fill in a placeholder by editing the command text", function()
   for _, placeholder in ipairs({ "<reply>", "<message>", "MESSAGE" }) do
-    local template = lib.send_command("session:test", "block:b1", placeholder)
+    local template = lib.send_command("block:b1", placeholder)
     local filled = template:gsub(placeholder:gsub("%p", "%%%0"), "Done, it'\\''s in /tmp/x $HOME")
     arrives(filled, "Done, it's in /tmp/x $HOME")
   end

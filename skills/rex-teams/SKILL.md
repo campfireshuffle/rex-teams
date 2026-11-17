@@ -89,6 +89,10 @@ A tab with one pane goes by its tab label. In a split tab, each pane goes by its
 
 To reply to a message, run the command in its header.
 
+### Other hosts
+
+Add `host=LABEL`, a label from `rex hosts`, to reach agents on another Rex host. `team.lua host=LABEL` lists its agents with commands that already carry `host=`. `block=` also takes a short ID or a label. An unknown or unreachable host fails; it never falls back to this one. A message gets a reply command only if that host knows yours; otherwise its header says the agent can't reply through Rex.
+
 These commands are quoted for POSIX shells. Write your text inside the single quotes, and write a `'` in it as `'\''` (`''` in PowerShell).
 
 - Send requests, answers, and results. Never send acknowledgements or thanks. Otherwise the team chats in circles.

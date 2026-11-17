@@ -46,4 +46,5 @@ Open agents in labeled tabs or panes, then talk to one:
 - If you're typing in a pane when a message lands, the message mixes into your draft.
 - A subagent that crashes before reporting wakes nobody.
 - Alarms stop if the Rex server restarts.
+- An agent on another host can reply only if its host lists yours in `rex hosts`. Subagents start only on this host.
 - Tested with Rex 0.1.0 (beta), Claude Code 2.1, Codex CLI 0.166, Pi 1.5 and OpenCode 2.2.
