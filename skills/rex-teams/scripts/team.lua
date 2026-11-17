@@ -12,7 +12,7 @@ local mine, me = lib.me()
 local sessions = { { session_id = mine } }
 if host then sessions = lib.call("session.list", {}, host).sessions end
 for _, s in ipairs(sessions) do
-  if host then print("session " .. s.label .. ":") end
+  if host then print("session " .. (s.label or s.session_id) .. ":") end
   for _, b in ipairs(lib.blocks(s.session_id, host)) do
     print(lib.name(b) .. "  " .. (not host and b.id == me and "(you)" or lib.send_command(b.id, "<message>", host)))
     -- Git runs here, so only this host's checkouts can be read.

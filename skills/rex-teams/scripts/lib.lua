@@ -145,14 +145,11 @@ function lib.header(from_session, from_block, host)
     for _, h in ipairs(lib.call("hosts.list", {}, host).hosts) do
       if h.host_id == me then back = h.label end
     end
-    if not back then
-      return "[from " .. from .. " on another Rex host, who can't see this screen. " .. lib.rule
-        .. " Your host has no route to theirs, so you can't reply through Rex.] "
-    end
   end
-  local reply = lib.send_command(from_block, "<reply>", back)
+  local tail = (host and not back) and "Your host has no route to theirs, so you can't reply through Rex."
+    or "Reply by running: " .. lib.send_command(from_block, "<reply>", back)
   return "[from " .. from .. (host and " on another Rex host" or "") .. ", who can't see this screen. "
-    .. lib.rule .. " Reply by running: " .. reply .. "] "
+    .. lib.rule .. " " .. tail .. "] "
 end
 
 return lib
