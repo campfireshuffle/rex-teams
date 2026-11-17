@@ -35,8 +35,12 @@ local function argv(command)
   for word in read(out):gmatch("([^\n]*)\n") do words[#words + 1] = word end
   return words
 end
-local function arrives(command, message)
+-- HOST, if given, must arrive as host=HOST before block=.
+local function arrives(command, message, host)
   local words = argv(command)
+  if host then
+    assert(table.remove(words, 3) == "host=" .. host, "host changed: " .. command)
+  end
   assert(#words == 4, "expected 4 words, got " .. #words .. ": " .. command)
   assert(words[1] == "do" and words[2] == lib.dir .. "send.lua", "script path changed: " .. tostring(words[2]))
   assert(words[3] == "block=block:b1")
@@ -76,6 +80,17 @@ check("the reply command in a message header runs as written", function()
   local header = lib.header("session:test", "block:b1")
   local reply = assert(header:match("Reply by running: (.*)%] $"))
   arrives(reply, "<reply>")
+end)
+check("a host_id and a cross-host reply run as written once the script path is filled in", function()
+  local id = "7c6a4922-c7e7-483a-95d4-89cabc146085"
+  for _, message in ipairs(tricky) do
+    arrives(lib.send_command("block:b1", message, id), message, id)
+  end
+  rex = { call = function() return { host_id = id } end, exec = function() return { ok = true, stdout = "box\n" } end }
+  local header = lib.header("session:test", "block:b1", true)
+  local reply = assert(header:match("Reply by running: (.*)%] $"))
+  local path = lib.quote(lib.dir .. "send.lua")
+  arrives((reply:gsub("<rex%-teams skill>/scripts/send%.lua", function() return path end)), "<reply>", id)
 end)
 sh("rm -rf " .. quote(root))
 print("Passed " .. count .. " send command trials through /bin/sh.")

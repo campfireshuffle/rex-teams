@@ -2,12 +2,12 @@
 --
 --   rex do <skill>/scripts/team.lua [host=HOST]
 --
--- With host=, a label from `rex hosts`, it lists every session on that host.
+-- With host=, a label or host_id from `rex hosts`, it lists every session on that host.
 -- Tabs prefixed with a possibly indented ↳ are subagents. Teammates are the other labeled tabs
 -- and panes.
 local lib = dofile(debug.getinfo(1, "S").source:gsub("^@", ""):match("^(.*[/\\])") .. "lib.lua")
 
-local host = rex.args.host and tostring(rex.args.host)
+local host = lib.host(rex.args.host)
 local mine, me = lib.me()
 local sessions = { { session_id = mine } }
 if host then sessions = lib.call("session.list", {}, host).sessions end

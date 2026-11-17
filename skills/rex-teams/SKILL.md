@@ -99,7 +99,9 @@ These commands are quoted for POSIX shells. Write your text inside the single qu
 
 ### Other hosts
 
-Add `host=LABEL`, a label from `rex hosts`, to reach agents on another Rex host. `team.lua host=LABEL` lists its agents with commands that already carry `host=`. `block=` also takes a short ID or a label. An unknown or unreachable host fails; it never falls back to this one. A message gets a reply command only if that host knows yours; otherwise its header says the agent can't reply through Rex.
+Add `host=LABEL` (from `rex hosts`) to reach agents on another Rex host. `team.lua host=LABEL` prints ready commands. Unknown hosts fail and never fall back to this one.
+
+Every message names its sender's host and how to reply. Run replies with your own copy of `send.lua`. If a reply fails with "no host", your Rex can't reach theirs: tell the user instead of retrying.
 
 Short IDs that look like numbers (e.g. `77e564`, `123456`) get mangled by `rex do` (issue #38). Use the full ID, or `--args '{"block":"77e564","message":"..."}'`.
 
