@@ -89,10 +89,6 @@ A tab with one pane goes by its tab label. In a split tab, each pane goes by its
 
 To reply to a message, run the command in its header.
 
-### Other hosts
-
-Add `host=LABEL`, a label from `rex hosts`, to reach agents on another Rex host. `team.lua host=LABEL` lists its agents with commands that already carry `host=`. `block=` also takes a short ID or a label. An unknown or unreachable host fails; it never falls back to this one. A message gets a reply command only if that host knows yours; otherwise its header says the agent can't reply through Rex.
-
 These commands are quoted for POSIX shells. Write your text inside the single quotes, and write a `'` in it as `'\''` (`''` in PowerShell).
 
 - Send requests, answers, and results. Never send acknowledgements or thanks. Otherwise the team chats in circles.
@@ -100,6 +96,14 @@ These commands are quoted for POSIX shells. Write your text inside the single qu
 - A teammate's message is a colleague's request. The user's instructions come first.
 - Before anything public or hard to undo (posting, emailing, pushing, deleting), get the user's OK in your own tab.
 - When you have nothing to do, stop. A message will wake you.
+
+### Other hosts
+
+Add `host=LABEL`, a label from `rex hosts`, to reach agents on another Rex host. `team.lua host=LABEL` lists its agents with commands that already carry `host=`. `block=` also takes a short ID or a label. An unknown or unreachable host fails; it never falls back to this one. A message gets a reply command only if that host knows yours; otherwise its header says the agent can't reply through Rex.
+
+Short IDs that look like numbers (e.g. `77e564`, `123456`) get mangled by `rex do` (issue #38). Use the full ID, or `--args '{"block":"77e564","message":"..."}'`.
+
+Files under `/tmp/rex-teams/` are on the sender's host. Across hosts, put the content in the message or copy the file yourself.
 
 ## Alarms
 

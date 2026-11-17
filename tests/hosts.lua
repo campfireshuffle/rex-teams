@@ -60,6 +60,10 @@ local function reset(remote_hosts)
         { id = "block:far-00000-cccccc", label = "Builder" },
         { id = "block:twin1-0000-dddddd", label = "Twin" },
         { id = "block:twin2-0000-eeeeee", label = "Twin" },
+        { id = "block:scout-0000-ffffff", label = "Scout" },
+      } },
+      ["session:near"] = { label = "near", tab = "Scout", blocks = {
+        { id = "block:scout-0000-999999", label = "Scout" },
       } },
     }),
   }
@@ -120,13 +124,19 @@ end)
 check("an ambiguous label fails with the candidates", function()
   reset({})
   local ok, err = run("send.lua", { host = "ws", block = "Twin", message = "hi" })
-  assert(not ok and has(err, "block:twin1-0000-dddddd") and has(err, "block:twin2-0000-eeeeee"), err)
+  assert(not ok and has(err, "block:twin1-0000-dddddd") and has(err, "block:twin2-0000-eeeeee"), tostring(err))
   assert(#pasted == 0)
+end)
+check("session= narrows a label that repeats across sessions", function()
+  reset({})
+  assert(run("send.lua", { host = "ws", session = "session:far", block = "Scout", message = "hi" }))
+  local p = assert(pasted[1])
+  assert(p.session == "session:far" and p.block == "block:scout-0000-ffffff", p.block)
 end)
 check("an unknown host fails without touching this host", function()
   reset({})
   local ok, err = run("send.lua", { host = "nope", block = "Helper", message = "hi" })
-  assert(not ok and has(err, 'no host named "nope"'), err)
+  assert(not ok and has(err, 'no host named "nope"'), tostring(err))
   assert(#calls == 0 and #pasted == 0)
 end)
 check("a cross-host message carries a reply command with host=", function()
