@@ -82,13 +82,8 @@ local report = lib.read(lib.dir .. "report.md"):gsub("{(%w+)}", {
     and ("You may start subagents of your own with the rex-teams skill, up to " .. depth .. " level(s) below you. Report only after they have reported to you.")
     or "Do this task yourself. You can't start subagents.",
 })
-local function write(path, text)
-  local file = assert(io.open(path, "w"))
-  assert(file:write(text))
-  assert(file:close())
-end
 -- A child can read immediately when new_window starts its command.
-write(prompt, task .. "\n\n" .. report)
+lib.write(prompt, task .. "\n\n" .. report)
 
 local created = lib.call("session.new_window", {
   session_id = session,
@@ -100,8 +95,8 @@ local created = lib.call("session.new_window", {
   },
 })
 local window, block = created.window_id, created.block_ids[1]
-write(close_file, "rex window close -s " .. session .. " " .. window .. "\n")
 lib.write(depth_file(block), depth .. "\n")
+lib.write(close_file, "rex window close -s " .. session .. " " .. window .. "\n")
 
 -- Rex adds new tabs at the end. Move this one after the parent and the
 -- subagents already under it (the deeper tabs that follow it). This runs last

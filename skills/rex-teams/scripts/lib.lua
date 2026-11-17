@@ -33,8 +33,8 @@ end
 
 function lib.write(path, text)
   local f = assert(io.open(path, "w"))
-  f:write(text)
-  f:close()
+  assert(f:write(text))
+  assert(f:close())
 end
 
 function lib.call(method, args)

@@ -54,6 +54,7 @@ local function run(failure)
   os.remove(root .. "-prompt.md")
   prompt_closed = false
   io.open = function(path, mode)
+    if failure == "close.md" and path == root .. "-close.md" and mode == "w" then return nil, "injected close.md failure" end
     if path ~= root .. "-prompt.md" or mode ~= "w" then return real_open(path, mode) end
     if failure == "open" then return nil, "injected open failure" end
     local file = assert(real_open(path, mode))
@@ -93,8 +94,14 @@ for i, failure in ipairs({ "open", "write", "close" }) do
   assert(launches == before, failure .. " failure must prevent launch")
   print("ok " .. (i + 1) .. " - prompt " .. failure .. " failure prevents launch")
 end
+assert(os.remove(close_path))
+os.remove(root .. "-child")
+local succeeded, message = run("close.md")
+assert(not succeeded and tostring(message):find("injected close.md failure", 1, true), tostring(message))
+local depth = assert(real_open(root .. "-child"), "depth file must exist once the child launched")
+assert(depth:close())
+print("ok 5 - close.md failure leaves the depth file in place")
 dofile = real_dofile
 assert(os.remove(root .. "-prompt.md"))
 assert(os.remove(root .. "-child"))
-assert(os.remove(close_path))
-print("Passed 4 spawn publication trials.")
+print("Passed 5 spawn publication trials.")

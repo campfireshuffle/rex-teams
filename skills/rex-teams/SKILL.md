@@ -49,7 +49,7 @@ Start all independent subagents in one go. As each report arrives, handle it and
 
 ### When a report arrives
 
-It points to `result.md`, whose first line is `STATUS: completed`, `failed`, or `blocked`, and it gives the command to close the subagent's tab.
+It points to `result.md`, whose first line is `STATUS: completed`, `failed`, or `blocked`, and to `<task folder>/close.md`, which holds the command to close the subagent's tab.
 
 - `completed`: check the claims that matter, then close the tab, unless you expect a follow-up soon.
 - `blocked`: answer with the reply command from the header, or ask the user.
@@ -71,7 +71,7 @@ If you closed it, find the saved conversation that starts with its kickoff, `Rea
 rex do <skill>/scripts/spawn.lua name=<short-name> cwd=<dir> task=<follow-up file> command="<resume command>"
 ```
 
-Use the retained worktree as `cwd` when resuming work that needs its changes. This resumes the conversation in a new tab with a fresh report path. The new reporting instructions replace the old ones. When it reports, close the tab from the new report's command.
+Use the retained worktree as `cwd` when resuming work that needs its changes. This resumes the conversation in a new tab with a fresh report path. The new reporting instructions replace the old ones. When it reports, close the tab with the command in the new task folder's `close.md`.
 
 ## Teammates
 
