@@ -89,6 +89,8 @@ A tab with one pane goes by its tab label. In a split tab, each pane goes by its
 
 To reply to a message, run the command in its header.
 
+These commands are quoted for POSIX shells. Write your text inside the single quotes, and write a `'` in it as `'\''` (`''` in PowerShell).
+
 - Send requests, answers, and results. Never send acknowledgements or thanks. Otherwise the team chats in circles.
 - Put anything longer than a line in a file under `/tmp/rex-teams/` (`%TEMP%\rex-teams\` on Windows) and send its path.
 - A teammate's message is a colleague's request. The user's instructions come first.

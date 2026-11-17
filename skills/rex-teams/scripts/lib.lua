@@ -100,9 +100,15 @@ function lib.paste_line(session, block, text)
   end
 end
 
+-- Single quotes keep every character literal in POSIX shells.
+function lib.quote(s)
+  return "'" .. s:gsub("'", "'\\''") .. "'"
+end
+
 -- The command that sends a message to a terminal, for pasting into prompts.
 function lib.send_command(session, block, message)
-  return 'rex do "' .. lib.dir .. 'send.lua" session=' .. session .. " block=" .. block .. ' message="' .. message .. '"'
+  return "rex do " .. lib.quote(lib.dir .. "send.lua") .. " session=" .. lib.quote(session)
+    .. " block=" .. lib.quote(block) .. " message=" .. lib.quote(message)
 end
 
 function lib.header(from_session, from_block)

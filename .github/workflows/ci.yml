@@ -19,6 +19,8 @@ jobs:
           for f in skills/rex-teams/scripts/*.lua; do luac5.1 -p "$f"; done
       - name: Run worktree mock trials
         run: lua5.1 tests/worktrees.lua
+      - name: Run generated send commands through /bin/sh
+        run: lua5.1 tests/send_command.lua
       - name: Check the skill's name matches its folder
         run: |
           name=$(sed -n 's/^name: //p' skills/rex-teams/SKILL.md)

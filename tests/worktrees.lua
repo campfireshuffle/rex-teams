@@ -197,7 +197,7 @@ check("team reads current branch and skips unavailable/nonterminal processes", f
   local output = run("team.lua")
   assert(output:find("branch: agents/renamed", 1, true))
   assert(output:find("worktree: " .. canonical, 1, true))
-  assert(output:find("block=block:child", 1, true))
+  assert(output:find("block='block:child'", 1, true))
   assert(output:find("Other", 1, true))
   assert(lib.header("session:test", "block:child"):find("fix-auth (w)", 1, true))
 end)
