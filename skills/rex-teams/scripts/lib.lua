@@ -37,8 +37,45 @@ function lib.write(path, text)
   assert(f:close())
 end
 
-function lib.call(method, args)
-  return assert(rex.call(method, args))
+-- Rex on HOST, a label from `rex hosts`, or on this host when HOST is nil.
+-- rex.server fails on a host it doesn't know, so nothing lands on the wrong one.
+function lib.call(method, args, host)
+  return assert((host and rex.server(host) or rex).call(method, args))
+end
+
+-- The label of the host that VALUE names, or nil for this host. VALUE is a
+-- label or a host_id from `rex hosts`, or this host's own host_id. Anything
+-- else fails rather than fall back to this host.
+function lib.host(value)
+  if value == nil then return nil end
+  value = tostring(value)
+  local me = lib.call("server.status", {}).host_id
+  if value == me then return nil end
+  local r = rex.exec({ "rex", "hosts", "--json" })
+  for _, entry in ipairs(r and r.ok and rex.json.decode(r.stdout).hosts or {}) do
+    local h = entry.host
+    if h.label == value or (h.host_id and h.host_id == value) then
+      if h.host_id and h.host_id == me then return nil end
+      -- A stale entry could point the label at a different machine now.
+      if h.label ~= value and lib.call("server.status", {}, h.label).host_id ~= value then
+        error("host " .. h.label .. " no longer has host_id " .. value .. ". Tell your user instead of retrying.", 0)
+      end
+      return h.label
+    end
+  end
+  error("no host " .. value .. " in your rex hosts; your Rex can't reach it. Tell your user instead of retrying.", 0)
+end
+
+-- The session and full ID of BLOCK on HOST. BLOCK is anything Rex accepts:
+-- a full ID, a short ID or a label. SESSION, if given, narrows the search.
+function lib.target(host, block, session)
+  local r = lib.call("target.resolve", { queries = { block }, kinds = { "block" },
+    scope = session and { session = session } or nil }, host).results[1]
+  if r.status == "resolved" then return r.target.session_id, r.target.block_id end
+  local choices = {}
+  for _, c in ipairs(r.candidates or {}) do choices[#choices + 1] = c.block_id .. " (" .. c.label .. ", " .. c.where .. ")" end
+  error("block " .. block .. (#choices > 0 and " could be " .. table.concat(choices, ", ")
+    or ": " .. ((r.reason or "") ~= "" and r.reason or "not found")), 0)
 end
 
 -- Git runs on the machine running this script, like the task files.
@@ -62,15 +99,15 @@ function lib.me()
 end
 
 -- A script must attach to a session before it can act on it.
-function lib.attach(session)
-  lib.call("session.attach", { session_id = session })
+function lib.attach(session, host)
+  lib.call("session.attach", { session_id = session }, host)
 end
 
 -- Every block in a session, with its tab and pane labels.
-function lib.blocks(session)
-  lib.attach(session)
+function lib.blocks(session, host)
+  lib.attach(session, host)
   local out = {}
-  for _, window in ipairs(lib.call("session.view", { session_id = session }).windows) do
+  for _, window in ipairs(lib.call("session.view", { session_id = session }, host).windows) do
     local blocks = {}
     for _, layer in ipairs(window.layers) do
       for _, block in ipairs(layer.blocks) do blocks[#blocks + 1] = block end
@@ -91,12 +128,12 @@ end
 
 -- Paste one line into a terminal, then press Enter. A paste event lets the
 -- program tell the text from the Enter that submits it.
-function lib.paste_line(session, block, text)
-  lib.call("block.event", { session_id = session, block_id = block, event = { type = "paste", payload = { text = text } } })
+function lib.paste_line(session, block, text, host)
+  lib.call("block.event", { session_id = session, block_id = block, event = { type = "paste", payload = { text = text } } }, host)
   for _, action in ipairs({ "press", "release" }) do
     lib.call("block.event", { session_id = session, block_id = block, event = { type = "key", payload = {
       key = "enter", mods = "", consumed_mods = "", text = "\r", unshifted_codepoint = 13, composing = false, action = action,
-    } } })
+    } } }, host)
   end
 end
 
@@ -106,18 +143,32 @@ function lib.quote(s)
 end
 
 -- The command that sends a message to a terminal, for pasting into prompts.
-function lib.send_command(session, block, message)
-  return "rex do " .. lib.quote(lib.dir .. "send.lua") .. " session=" .. lib.quote(session)
+-- HOST is the label or host_id the reader's Rex knows the terminal's host by.
+-- SCRIPT is send.lua's path as written in the command.
+function lib.send_command(block, message, host, script)
+  return "rex do " .. (script or lib.quote(lib.dir .. "send.lua")) .. (host and " host=" .. lib.quote(host) or "")
     .. " block=" .. lib.quote(block) .. " message=" .. lib.quote(message)
 end
 
-function lib.header(from_session, from_block)
+-- The header of a message to another host when CROSS is true. send.lua's
+-- path differs on every host, so the reply names it by a placeholder, and
+-- this host by its host_id, which any Rex that can reach it has in `rex hosts`.
+function lib.header(from_session, from_block, cross)
   local from
   for _, block in ipairs(lib.blocks(from_session)) do
     if block.id == from_block then from = lib.name(block) end
   end
-  local reply = lib.send_command(from_session, from_block, "<reply>")
-  return "[from " .. from .. ", who can't see this screen. " .. lib.rule .. " Reply by running: " .. reply .. "] "
+  local reply = lib.send_command(from_block, "<reply>")
+  local lead = " Reply by running: "
+  if cross then
+    local name = rex.exec({ "hostname" })
+    from = from .. " on " .. (name and name.ok and name.stdout:match("^%s*(.-)%s*$") or "another Rex host")
+    local id = lib.call("server.status", {}).host_id
+    reply = id and lib.send_command(from_block, "<reply>", id, "<rex-teams skill>/scripts/send.lua")
+    lead = " Reply by running, with your rex-teams skill's path filled in: "
+  end
+  return "[from " .. from .. ", who can't see this screen. " .. lib.rule
+    .. (reply and lead .. reply or "") .. "] "
 end
 
 return lib
