@@ -41,8 +41,8 @@ send.lua  alarm.lua  team.lua  spawn.lua        entry points: parse arguments, p
 
 **Send**
 ```
-agent ─ rex do send.lua ─► mail.post ─ check, lib.target ─► outbox/<id>.json (tmp + rename)
-                                     └─ postman.ensure ─► (start the postman if it isn't running)
+agent ─ rex do send.lua ─► mail.post ─ check, lib.target, postman.ensure ─► (start the postman if it isn't running)
+                                     └─ then ─► outbox/<id>.json (tmp + rename); nothing if anything raised
 agent ◄─ "queued message <id> for <name>"
 ```
 

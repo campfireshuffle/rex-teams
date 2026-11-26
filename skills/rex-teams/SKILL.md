@@ -65,7 +65,7 @@ If the child is still open, send it another task with the printed `send.lua` com
 
 Use the `message it:` command, not the `tab:` ID. A window ID can't receive messages. Lost it? Run `team.lua`.
 
-If you closed it, find the saved conversation that starts with its kickoff, `Read <task folder>/prompt.md and follow it.`, and work out that CLI's resume command. Write the follow-up to a new task file, then use spawn again:
+If you closed it, find the saved conversation that starts with its kickoff, `You are a subagent. Don't rename the Rex session or your tab. Read <task folder>/prompt.md and follow it.`, and work out that CLI's resume command. Write the follow-up to a new task file, then use spawn again:
 
 ```sh
 rex do <skill>/scripts/spawn.lua name=<short-name> cwd=<dir> task=<follow-up file> command="<resume command>"
@@ -77,13 +77,13 @@ Use the retained worktree as `cwd` when resuming work that needs its changes. Th
 
 Your teammates are the other labeled tabs and panes in your session, except tabs prefixed with a possibly indented `↳`, which are subagents. The user may also tell you about teammates elsewhere.
 
-List your team, then message a teammate by running the command printed next to its name, with your message in place of `<message>`. The command targets the teammate's block ID, because labels can change or repeat and IDs don't. `team.lua` also says how many of your messages still wait for each agent, and why.
+List your team, then message a teammate by running the command printed next to its name, with your message in place of `<message>`. The command targets the teammate's block ID, because labels can change or repeat and IDs don't. `team.lua` also says how many messages, from anyone, still wait for each agent and why, and how many the postman gave up on. An alarm counts once it's due; the postman's notices don't count.
 
 ```sh
 rex do <skill>/scripts/team.lua
 ```
 
-Your pane's ID is `$REX_BLOCK` (`$env:REX_BLOCK` in PowerShell). `-s` accepts it as well as a session ID, because a pane's ID names its session.
+Your pane's ID is `$REX_BLOCK` (`$env:REX_BLOCK` in PowerShell).
 
 A tab with one pane goes by its tab label. In a split tab, each pane goes by its own label.
 
@@ -121,7 +121,7 @@ Keep the message to a short note to yourself, since you'll still have the conver
 
 `alarm.lua` prints the alarm's id and the `rm` command that cancels it. List your alarms with `rex do <skill>/scripts/alarm.lua list=true`.
 
-If a script prints that queued messages and alarms won't survive a Rex restart, pass its `rex.set(…)` line to the user once. Don't edit their Rex config. With the rule, the postman comes back after a restart, a one-shot that was due meanwhile arrives marked `[late by Ns, Rex restarted]`, and recurring alarms skip missed ticks. Without it, the postman starts again with the next message. If a script prints that the postman didn't start, tell the user what it says.
+If a script prints that Rex won't start the postman again after a restart, pass its `rex.set(…)` line to the user once. Don't edit their Rex config. With the rule, the postman comes back after a restart, a one-shot that was due meanwhile arrives marked `[late by Ns, Rex restarted]`, and recurring alarms skip missed ticks. Without it, queued messages and alarms are kept, and wait until the next message starts the postman. If a script prints that the postman didn't start, nothing was queued; tell the user what it says, and send again once it's fixed.
 
 ## Rules
 

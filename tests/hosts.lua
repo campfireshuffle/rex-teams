@@ -271,10 +271,11 @@ check("team.lua says how many messages wait for an agent, and why", function()
   local mail = real_dofile(lib.dir .. "mail.lua")
   os.execute("mkdir -p '" .. tmp .. "/outbox'")
   local to = { session = "session:me", block = "block:peer-00000-bbbbbb", name = "Helper" }
-  mail.write({ id = "100-aaaa", posted = 100, to = to, d = { why = "someone is typing there" } })
-  mail.write({ id = "101-bbbb", posted = 101, to = to })
-  mail.write({ id = "102-cccc", posted = 102, to = to, dead = "gone" })
-  mail.write({ id = "103-dddd", posted = 103, to = to, notice = true })
+  local from = { session = "session:me", block = "block:me-000000-aaaaaa", name = "Chief" }
+  mail.write({ id = "100-aaaa", posted = 100, to = to, from = from, d = { why = "someone is typing there" } })
+  mail.write({ id = "101-bbbb", posted = 101, to = to, from = from })
+  mail.write({ id = "102-cccc", posted = 102, to = to, from = from, dead = "gone" })
+  mail.write({ id = "103-dddd", posted = 103, to = to, from = from, notice = true })
   dofile = real_dofile
   local plain = servers[""].call
   rex.call = function(method, args)
@@ -289,5 +290,49 @@ check("team.lua says how many messages wait for an agent, and why", function()
   local all = table.concat(printed, "\n")
   assert(has(all, "block='block:peer-00000-bbbbbb' message='<message>'\n  (2 messages waiting: someone is typing there)\n"
     .. "  (1 message not delivered; its sender was told)"), all)
+end)
+check("team.lua counts every sender's messages, and says a sender was told only when one was", function()
+  reset()
+  load()
+  local mail = real_dofile(lib.dir .. "mail.lua")
+  os.execute("mkdir -p '" .. tmp .. "/outbox'")
+  local to = { session = "session:me", block = "block:peer-00000-bbbbbb", name = "Helper" }
+  local me = { session = "session:me", block = "block:me-000000-aaaaaa", name = "Chief" }
+  local other = { session = "session:me", block = "block:other-0000-ffffff", name = "Other" }
+  local msgs = {
+    { id = "100-aaaa", posted = 100, to = to, from = other },
+    { id = "101-bbbb", posted = 101, to = to, from = me, dead = "gone" },
+    { id = "102-cccc", posted = 102, to = to, from = other, dead = "gone" },
+    -- An alarm the receiver set for itself: the postman tells nobody.
+    { id = "103-dddd", posted = 103, to = to, from = to, dead = "gone", head = "[alarm you set" },
+  }
+  local entries = {}
+  for _, msg in ipairs(msgs) do
+    mail.write(msg)
+    entries[#entries + 1] = { name = msg.id .. ".json" }
+  end
+  -- The postman's own policy decides who is told.
+  local P = real_dofile("skills/rex-teams/scripts/postman.lua")
+  local live = { id = "104-eeee", posted = 104, to = to, from = to, head = "[alarm you set", tail = "] ", text = "hi" }
+  assert(P.step(live, { gone = true }, 104).kind == "save", "a self-addressed message now causes a notice")
+  dofile = real_dofile
+  local plain = servers[""].call
+  rex.call = function(method, args)
+    if method == "block.method" and args.method == "list_dir" then return { status = "ok", entries = entries } end
+    return plain(method, args)
+  end
+  assert(run("team.lua", {}))
+  local all = table.concat(printed, "\n")
+  assert(has(all, "block='block:peer-00000-bbbbbb' message='<message>'\n  (1 message waiting)\n"
+    .. "  (2 messages not delivered; their senders were told)\n"
+    .. "  (1 message it sent itself not delivered)"), all)
+  assert(not has(all, "its sender was told"), all)
+  local again = { id = "105-ffff", posted = 105, to = to, from = to, dead = "gone", head = "[alarm you set" }
+  mail.write(again)
+  entries[#entries + 1] = { name = again.id .. ".json" }
+  printed = {}
+  assert(run("team.lua", {}))
+  all = table.concat(printed, "\n")
+  assert(has(all, "  (2 messages it sent itself not delivered)"), all)
 end)
 print("Passed " .. count .. " host trials.")

@@ -21,6 +21,7 @@ lib.path = function(...)
   return root .. "-" .. parts[#parts]
 end
 local launches, prompt_closed, close_path = 0, false
+local nesting, depth_arg = "You can't start subagents."
 rex.call = function(method, args)
   if method == "session.attach" then return {} end
   if method == "session.view" then return { windows = {} } end
@@ -34,7 +35,7 @@ rex.call = function(method, args)
     assert(prompt:find("Complete mock task.\nFinal task instruction.", 1, true))
     assert(prompt:find("Work in `/checkout`.", 1, true))
     assert(prompt:find("STATUS: completed", 1, true))
-    assert(prompt:find("You can't start subagents.", 1, true))
+    assert(prompt:find(nesting, 1, true), "the prompt must say: " .. nesting)
     assert(prompt:find("send.lua' block='block:parent' message=", 1, true))
     assert(not prompt:find("session=", 1, true))
     close_path = assert(prompt:match("run the close command in ([^ ]+close%.md)"), "notice must point to parent-owned close instructions")
@@ -76,7 +77,7 @@ local function run(failure)
       end,
     }
   end
-  rex.args = { name = "test", cwd = "/checkout", task = "task.md", command = "mock-agent {prompt}" }
+  rex.args = { name = "test", cwd = "/checkout", task = "task.md", command = "mock-agent {prompt}", depth = depth_arg }
   local saved_print = print
   print = function() end
   local ok, err = pcall(real_dofile, "skills/rex-teams/scripts/spawn.lua")
@@ -102,7 +103,38 @@ assert(not succeeded and tostring(message):find("injected close.md failure", 1, 
 local depth = assert(real_open(root .. "-child"), "depth file must exist once the child launched")
 assert(depth:close())
 print("ok 5 - close.md failure leaves the depth file in place")
-dofile = real_dofile
-assert(os.remove(root .. "-prompt.md"))
 assert(os.remove(root .. "-child"))
-print("Passed 5 spawn publication trials.")
+
+-- A subagent's own depth file limits how deep its subagents may go.
+local function child_depth()
+  local f = assert(real_open(root .. "-child"), "the child's depth file is missing")
+  local value = f:read("*l")
+  assert(f:close())
+  return value
+end
+local function allow(levels)
+  local f = assert(real_open(root .. "-parent", "w"))
+  assert(f:write(levels .. "\n"))
+  assert(f:close())
+end
+allow(2)
+depth_arg, nesting = 5, "up to 1 level(s) below you"
+ok, err = run()
+assert(ok, err)
+assert(child_depth() == "1", "a parent allowed 2 levels gives its child at most 1, not " .. child_depth())
+assert(os.remove(root .. "-child"))
+assert(os.remove(root .. "-close.md"))
+print("ok 6 - a subagent's subagents get at most one level less than it was allowed")
+allow(0)
+depth_arg, nesting = nil, "You can't start subagents."
+local before = launches
+succeeded, message = run()
+assert(not succeeded, "a subagent allowed no levels started one")
+assert(tostring(message):find("didn't allow you to start subagents", 1, true), tostring(message))
+assert(launches == before, "a subagent allowed no levels must not launch one")
+assert(not real_open(root .. "-child"), "no depth file without a launch")
+print("ok 7 - a subagent allowed no levels can't start one")
+assert(os.remove(root .. "-parent"))
+dofile = real_dofile
+assert(not real_open(root .. "-prompt.md"), "no prompt without a launch")
+print("Passed 7 spawn publication trials.")

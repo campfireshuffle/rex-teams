@@ -4,7 +4,8 @@
 --
 -- With host=, a label from `rex hosts`, it lists every session on that host.
 -- Tabs prefixed with a possibly indented ↳ are subagents. Teammates are the other labeled tabs
--- and panes. An agent with messages still queued for it says how many, and why.
+-- and panes. An agent with messages still queued for it, from anyone, says how many, and why,
+-- and how many the postman gave up on.
 local dir = debug.getinfo(1, "S").source:gsub("^@", ""):match("^(.*[/\\])")
 local lib = dofile(dir .. "lib.lua")
 local mail = dofile(dir .. "mail.lua")
@@ -17,9 +18,11 @@ local queued = {}
 for _, msg in ipairs(mail.list()) do
   -- An alarm counts once it's due.
   if msg.to.host == host and not msg.notice and (msg.d or not (msg.at or msg.every)) then
-    local q = queued[msg.to.block] or { n = 0, stopped = 0 }
+    local q = queued[msg.to.block] or { n = 0, told = 0, untold = 0 }
     queued[msg.to.block] = q
-    if msg.dead then q.stopped = q.stopped + 1 else
+    -- The postman tells the sender of a dead message, unless it sent it itself.
+    if msg.dead and not msg.to.host and msg.from.block == msg.to.block then q.untold = q.untold + 1
+    elseif msg.dead then q.told = q.told + 1 else
       q.n = q.n + 1
       q.why = q.why or (msg.d and msg.d.why)
     end
@@ -33,8 +36,12 @@ for _, s in ipairs(sessions) do
     if q and q.n > 0 then
       print("  (" .. q.n .. (q.n == 1 and " message" or " messages") .. " waiting" .. (q.why and ": " .. q.why or "") .. ")")
     end
-    if q and q.stopped > 0 then
-      print("  (" .. q.stopped .. (q.stopped == 1 and " message" or " messages") .. " not delivered; its sender was told)")
+    if q and q.told > 0 then
+      print("  (" .. q.told .. (q.told == 1 and " message not delivered; its sender was told)"
+        or " messages not delivered; their senders were told)"))
+    end
+    if q and q.untold > 0 then
+      print("  (" .. q.untold .. (q.untold == 1 and " message" or " messages") .. " it sent itself not delivered)")
     end
     -- Git runs here, so only this host's checkouts can be read.
     local process = not host and rex.call("block.method", { session_id = s.session_id, block_id = b.id, method = "process", args = {} })

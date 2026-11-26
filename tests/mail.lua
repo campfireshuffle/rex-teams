@@ -1,6 +1,6 @@
 -- Run from the repo root with `luajit tests/mail.lua` or `lua5.1 tests/mail.lua`.
--- mail.post checks everything, resolves the address once, queues one file
--- atomically, wakes the postman, and never touches the receiver.
+-- mail.post checks everything, resolves the address once, wakes the postman,
+-- queues one file atomically, and never touches the receiver.
 local json = dofile("tests/lib/json.lua")
 local real_dofile = dofile
 local function quote(s) return "'" .. s:gsub("'", "'\\''") .. "'" end
@@ -8,7 +8,7 @@ local tmp = os.tmpname()
 os.remove(tmp)
 local root = tmp .. "/rex-teams"
 
-local calls, ensured, renames
+local calls, ensured, renames, ensure_error
 local blocks = {
   ["block:me"] = { session = "s:me", tab = "Chief" },
   ["block:peer"] = { session = "s:me", tab = "Helper" },
@@ -48,7 +48,7 @@ local function server(name)
 end
 local servers
 local function reset()
-  calls, ensured, renames = {}, 0, 0
+  calls, ensured, renames, ensure_error = {}, 0, 0, nil
   os.execute("rm -rf " .. quote(tmp))
   servers = { [""] = server("local"), ws = server("ws") }
   rex = {
@@ -75,13 +75,21 @@ os.rename = function(a, b)
   assert(a == b .. ".tmp", "not written to a temp file first: " .. a)
   return real_rename(a, b)
 end
+local function outbox_files()
+  local p = io.popen("ls " .. quote(root .. "/outbox") .. " 2>/dev/null")
+  local names = {}
+  for name in p:lines() do names[#names + 1] = name end
+  p:close()
+  return names
+end
 local queued_at_ensure
 dofile = function(path)
   if path:match("/lib%.lua$") then return lib end
   if path:match("/postman%.lua$") then
     return { ensure = function(hint)
       ensured = ensured + 1
-      queued_at_ensure = io.open(root .. "/outbox") ~= nil
+      queued_at_ensure = #outbox_files()
+      if ensure_error then error(ensure_error, 0) end
       return hint and "the hint" or nil
     end }
   end
@@ -123,7 +131,7 @@ local function only()
   return msg
 end
 
-trial("a message is queued as one file, atomically, then the postman is woken", function()
+trial("the postman is woken, then the message is queued as one file, atomically", function()
   local id, name = mail.post({ to = "Helper", text = "hi" })
   assert(id:match("^%d+%-%a%a%a%a$") and name == "Helper", id .. " " .. name)
   local msg = only()
@@ -131,7 +139,17 @@ trial("a message is queued as one file, atomically, then the postman is woken", 
   assert(msg.from.block == "block:me" and msg.from.name == "Chief" and msg.to.host == nil)
   assert(msg.head == "[from Chief" and msg.tail:find("^, who can't see this screen%. Don't rename the Rex session or your tab%. Reply by running: rex do "), msg.tail)
   assert(msg.tail:find("block='block:me' message='<reply>'] $"), msg.tail)
-  assert(renames == 1 and ensured == 1 and queued_at_ensure)
+  assert(renames == 1 and ensured == 1 and queued_at_ensure == 0, "queued before the postman was woken")
+end)
+trial("when the postman doesn't start, post raises and nothing is queued, so sending again doesn't double it", function()
+  ensure_error = "the postman didn't start: boom"
+  local ok, err = pcall(mail.post, { to = "Helper", text = "hi" })
+  assert(not ok and err == "the postman didn't start: boom", tostring(err))
+  local names = outbox_files()
+  assert(#names == 0, "a message whose post raised was queued: " .. table.concat(names, " "))
+  ensure_error = nil
+  mail.post({ to = "Helper", text = "hi" })
+  assert(only().text == "hi")
 end)
 trial("post never types into the receiver", function()
   mail.post({ to = "Helper", text = "hi" })

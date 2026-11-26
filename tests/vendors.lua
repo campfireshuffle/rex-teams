@@ -76,6 +76,45 @@ trial("codex: an approval dialog reads as text that isn't ours, never as empty",
   local c = composer("dialog", "codex")
   assert(c and c.text ~= "" and not vendors.token(vendors.find("codex"), c.text), c and c.text)
 end)
+-- The guards below are checked on recorded screens with one row changed, so
+-- each screen differs from a real one only where the guard matters.
+local function blank() return { { ch = " " } } end
+local function rule() local row = {} for i = 1, 80 do row[i] = { ch = "─" } end return row end
+local function line(indent, text, bold)
+  local row = {}
+  for _ = 1, indent do row[#row + 1] = { ch = " " } end
+  for ch in text:gmatch("[%z\1-\127\194-\244][\128-\191]*") do row[#row + 1] = { ch = ch, bold = bold } end
+  return row
+end
+trial("claude-code: a ❯ prompt echoed in the transcript isn't the composer", function()
+  -- The composer is gone (as under a dialog) and a rule follows an echoed
+  -- prompt: without a rule above it, that ❯ isn't a composer.
+  local rows = screen("delivered@claude-code")
+  assert(vt.text(rows[7]):find("^❯ %[from") and vt.text(rows[9]) == "", "the fixture changed")
+  for r = 20, 22 do rows[r] = blank() end
+  rows[9] = rule()
+  local c = vendors.find("claude-code").composer(rows)
+  assert(c == nil, c and c.text)
+end)
+trial("claude-code: a ❯ row with no closing rule below isn't a composer", function()
+  local rows = screen("empty@claude-code")
+  assert(vt.rule(rows[20]) and vt.rule(rows[22]), "the fixture changed")
+  rows[22] = blank()
+  local c = vendors.find("claude-code").composer(rows)
+  assert(c == nil, c and c.text)
+end)
+trial("codex: a › that isn't bold isn't the composer", function()
+  local rows = screen("empty@codex")
+  rows[24] = line(0, "› a plain arrow in the footer", false)
+  local c = assert(vendors.find("codex").composer(rows), "no composer")
+  assert(c.text == "" and c.dim == placeholder.codex and c.top == 21, c.text)
+end)
+trial("codex: a bold › past column 2 isn't the composer", function()
+  local rows = screen("empty@codex")
+  rows[24] = line(4, "› an indented bold arrow", true)
+  local c = assert(vendors.find("codex").composer(rows), "no composer")
+  assert(c.text == "" and c.dim == placeholder.codex and c.top == 21, c.text)
+end)
 trial("CLIs are found by app, or by process name when the app is missing", function()
   for _, app in ipairs(apps) do assert(vendors.find(app), app) end
   assert(vendors.find(nil, "claude") == vendors.find("claude-code"))
