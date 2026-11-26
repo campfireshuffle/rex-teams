@@ -83,7 +83,7 @@ List your team, then message a teammate by running the command printed next to i
 rex do <skill>/scripts/team.lua
 ```
 
-Your session ID is `$REX_SESSION` (`$env:REX_SESSION` in PowerShell).
+Your pane's ID is `$REX_BLOCK` (`$env:REX_BLOCK` in PowerShell). Rex commands take it wherever they want a session too, because a pane's ID names its session.
 
 A tab with one pane goes by its tab label. In a split tab, each pane goes by its own label.
 
@@ -107,7 +107,7 @@ Use `in=SECONDS` once or `every=SECONDS` to repeat. The target defaults to you; 
 
 Keep the message to a short note to yourself, since you'll still have the conversation. Give a recurring alarm a stop condition, such as "check CI, and cancel this alarm once it's green".
 
-Cancel with `rex block close -s <session ID> <alarm block ID>`; list alarms with `rex block ls -s <session ID>`.
+Cancel with `rex block close -s "$REX_BLOCK" <alarm block ID>`; list alarms with `rex block ls -s "$REX_BLOCK"`.
 
 ## Rules
 

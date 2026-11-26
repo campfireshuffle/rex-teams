@@ -57,8 +57,17 @@ function lib.worktree(cwd)
 end
 
 -- The agent running this script.
+-- Rex sets REX_BLOCK in every terminal. A pane keeps its ID when its tab
+-- moves to another session, so look its session up. Rex before 0.1.0-preview.25
+-- also set REX_SESSION.
 function lib.me()
-  return assert(os.getenv("REX_SESSION"), "run this inside a Rex terminal"), os.getenv("REX_BLOCK")
+  local block = os.getenv("REX_BLOCK")
+  if block then
+    local r = rex.call("target.resolve", { queries = { block }, kinds = { "block" } })
+    local found = r and r.results and r.results[1]
+    if found and found.status == "resolved" then return found.target.session_id, found.target.block_id end
+  end
+  return assert(os.getenv("REX_SESSION"), "run this inside a Rex terminal"), block
 end
 
 -- A script must attach to a session before it can act on it.
