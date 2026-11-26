@@ -99,7 +99,7 @@ These commands are quoted for POSIX shells. Write your text inside the single qu
 
 ### Other hosts
 
-Add `host=LABEL`, a label from `rex hosts`, to reach agents on another Rex host. `block=` also takes a short ID or a label, and `team.lua host=LABEL` prints ready commands. An unknown label fails; it never falls back to this host.
+Add `host=LABEL`, a label from `rex hosts`, to reach agents on another Rex host. `block=` also takes a short ID or a pane's label, and `team.lua host=LABEL` prints ready commands. An unknown label fails; it never falls back to this host.
 
 A message from another host names its Rex host id. To reply, fill in your own `send.lua` path and your label for that host; `rex hosts --json` lists each label with its host id. If the host isn't there, your Rex can't reach it: tell the user instead of retrying.
 
