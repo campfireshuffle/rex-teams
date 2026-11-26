@@ -12,7 +12,8 @@ lib.dir = debug.getinfo(1, "S").source:gsub("^@", ""):match("^(.*[/\\])")
 lib.rule = "Don't rename the Rex session or your tab."
 
 -- Agent sandboxes usually let programs write to /tmp.
-lib.root = (lib.windows and os.getenv("TEMP") or "/tmp") .. lib.sep .. "rex-teams"
+lib.root = (lib.windows and assert(os.getenv("TEMP"), "TEMP isn't set, so rex-teams has no folder for its files")
+  or "/tmp") .. lib.sep .. "rex-teams"
 
 function lib.path(...)
   return table.concat({ lib.root, ... }, lib.sep)
@@ -117,6 +118,75 @@ function lib.paste_line(session, block, text, host)
       key = "enter", mods = "", consumed_mods = "", text = "\r", unshifted_codepoint = 13, composing = false, action = action,
     } } }, host)
   end
+end
+
+-- The absolute paths of PATHS, read the way a program in BLOCK's terminal
+-- would, so relative paths and ~ work. Each must exist.
+function lib.locate(session, block, paths)
+  local found = {}
+  for _, path in ipairs(paths) do
+    local dir = lib.call("block.method", { session_id = session, block_id = block, method = "list_dir", args = { path = path, limit = 1 } })
+    if dir.status ~= "ok" and dir.status ~= "not_dir" then error("file " .. path .. ": " .. dir.status, 0) end
+    -- The message is one line.
+    assert(not dir.path:find("[\r\n]"), "file " .. path .. ": a name with a line break can't go in a message")
+    found[#found + 1] = dir.path
+  end
+  return found
+end
+
+local cp_exit = { [3] = "that host's Rex has no rex cp", [4] = "can't reach that host" }
+
+local function rex_cp(host, session, from, to)
+  local r, err = rex.exec({ "rex", "-S", host, "cp", "-s", session, "-r", from, to }, { timeout = 600 })
+  if not r then error("rex cp to " .. host .. ": " .. tostring(err), 0) end
+  if not r.ok then
+    error("rex cp to " .. host .. " failed (exit " .. tostring(r.code) .. (cp_exit[r.code] and ", " .. cp_exit[r.code] or "")
+      .. "): " .. (r.stderr or ""):gsub("%s+$", ""), 0)
+  end
+end
+
+-- Copy FILES, absolute paths here, into BLOCK's inbox on HOST with one
+-- rex cp, and return their paths there and the folder holding them. The
+-- receiver's /tmp/rex-teams may be a symlink, and rex cp merges into a
+-- symlinked folder only when it's named as the destination, so the stage
+-- holds inbox/<block>/<id>/ and goes to /tmp/rex-teams/ itself.
+function lib.send_files(host, session, block, files)
+  assert(not lib.windows, "file= to another host doesn't work from Windows yet")
+  math.randomseed(os.time() + os.clock() * 1e6)
+  local id = tostring(os.time()) .. "-"
+  for _ = 1, 4 do id = id .. string.char(math.random(97, 122)) end
+  local uuid = block:gsub("^block:", "")
+  local folder = "/tmp/rex-teams/inbox/" .. uuid .. "/" .. id
+  local landed, names = {}, {}
+  for _, file in ipairs(files) do
+    local name = file:match("([^/]+)/*$")
+    if names[name] then error("two files are named " .. name .. "; send them separately", 0) end
+    names[name] = true
+    landed[#landed + 1] = folder .. "/" .. name
+  end
+
+  local stage = lib.path("outbox", id)
+  local ok, err = pcall(function()
+    local box = table.concat({ stage, "inbox", uuid, id }, "/")
+    lib.mkdir(box)
+    local argv = { "cp", "-R" }
+    for _, file in ipairs(files) do argv[#argv + 1] = file end
+    argv[#argv + 1] = box
+    local r = rex.exec(argv)
+    if not (r and r.ok) then error("can't copy the files to " .. box .. ": " .. (r and r.stderr or ""), 0) end
+    local root = lib.call("block.method", { session_id = session, block_id = block, method = "list_dir", args = { path = "/tmp/rex-teams", limit = 1 } }, host).status
+    if root == "missing" then
+      lib.mkdir(stage .. "/rex-teams")
+      rex_cp(host, session, stage .. "/rex-teams", ":/tmp/")
+    elseif root ~= "ok" then
+      error("/tmp/rex-teams on " .. host .. ": " .. root, 0)
+    end
+    rex_cp(host, session, stage .. "/inbox", ":/tmp/rex-teams/")
+  end)
+  local removed = rex.exec({ "rm", "-rf", stage })
+  if not ok then error(err, 0) end
+  assert(removed and removed.ok, "can't remove " .. stage)
+  return landed, folder
 end
 
 -- Single quotes keep every character literal in POSIX shells.
