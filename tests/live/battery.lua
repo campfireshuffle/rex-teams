@@ -22,6 +22,7 @@ local clis = {
   { name = "codex", cmd = { "codex" } },
   { name = "opencode", cmd = { "opencode" } },
   { name = "pi", cmd = { "pi" } },
+  { name = "shell" }, -- this host's shell: the postman doesn't read it
 }
 -- A CLI that can show a permission dialog, started so it does.
 local dialogs = { codex = { "codex", "-a", "on-request", "-s", "read-only", "-c", "approvals_reviewer=user" } }
@@ -103,16 +104,18 @@ local function run(script, args)
 end
 local function send(block, text, host) return run("send.lua", { block = block, message = text .. quiet, host = host }) end
 
--- A message as mail.post would queue it, but already pasted once (STATE),
--- to stand in for a postman that was cut off mid-delivery.
--- BEFORE runs first, with the text the postman would have pasted.
-local function forge(block, text, d, before)
+-- A message as mail.post would queue it, already pasted and Entered, to
+-- stand in for one whose Enter the CLI lost. BEFORE runs first, with the
+-- text the postman pasted.
+local function forge(block, text, before)
   local id = tostring(os.time()) .. "-" .. string.char(math.random(97, 122), math.random(97, 122), math.random(97, 122), math.random(97, 122))
-  d.tag = id
   local msg = { id = id, posted = os.time(), to = { session = session, block = block, name = "receiver" },
     from = { session = session, block = sender, name = "battery sender" },
-    head = "[from battery sender", tail = ", who can't see this screen.] ", text = text .. quiet, d = d }
-  if before then before(msg.head .. " · msg " .. id .. msg.tail .. msg.text) rex.sleep(1) end
+    head = "[from battery sender", tail = ", who can't see this screen.] ", text = text .. quiet }
+  local pasted = msg.head .. " · msg " .. id .. msg.tail .. msg.text
+  msg.d = { tag = id, pasted_at = os.time(), known = true, text = pasted }
+  before(pasted)
+  rex.sleep(1)
   local f = assert(io.open(outbox(id) .. ".tmp", "w"))
   f:write(rex.json.encode(msg))
   f:close()
@@ -160,23 +163,25 @@ function scenarios.busy(c)
   paste(c.block, "Run the shell command `sleep 15` and then reply with just OK.")
   enter(c.block)
   if not wait_for(function() return status(c.block) == "working" end, 10) then return false, "never got busy" end
-  local id = send(c.block, "Busy held.")
-  rex.sleep(5)
-  local held = exists(outbox(id)) and status(c.block) == "working"
-  local ok = delivered(c.block, id, 90)
-  return held and ok and seen(c.block, id), held and "held while working" or "not held"
+  local id = send(c.block, "Busy steered.")
+  local ok, took = delivered(c.block, id, 10)
+  local working = status(c.block) == "working"
+  -- The CLI takes it in: the id shows on its screen.
+  local shown = wait_for(function() return seen(c.block, id) end, 90)
+  return ok and working and shown, ("delivered %.1fs into the turn"):format(took)
 end
 function scenarios.lost_enter(c)
   -- What a lost Enter leaves: our text in the composer, unsent.
-  local id = forge(c.block, "Lost Enter.", { pastes = 1, pasted_at = os.time(), last = os.time() - 5, enters = 0 },
-    function(text) paste(c.block, text) end)
+  local id = forge(c.block, "Lost Enter.", function(text) paste(c.block, text) end)
   local ok = delivered(c.block, id, 20)
-  return ok and seen(c.block, id), ok and "Enter pressed again" or "still queued"
+  return ok and seen(c.block, id), ok and "Enter pressed once more" or "still queued"
 end
-function scenarios.resend(c)
-  local id = forge(c.block, "Lost paste.", { pastes = 1, pasted_at = os.time() - 11, last = os.time() - 11, enters = 0 })
-  local ok = delivered(c.block, id, 20)
-  return ok and screen(c.block):find("msg " .. id .. " · resent", 1, true) ~= nil, ok and "labelled resent" or "still queued"
+function scenarios.shell(c)
+  write(c.block, "a draft the postman doesn't read")
+  rex.sleep(1)
+  local id = send(c.block, "Shell paste.")
+  local ok, took = delivered(c.block, id, 10)
+  return ok and seen(c.block, id), ("%.1fs"):format(took)
 end
 function scenarios.alarm(c)
   local id = run("alarm.lua", { ["in"] = 5, message = "Alarm on time." .. quiet, block = c.block })
@@ -198,7 +203,7 @@ function scenarios.dialog(c)
   local held = exists(outbox(id)) and not seen(c.dialog, id)
   write(c.dialog, "\27") -- cancel the dialog
   local ok = delivered(c.dialog, id, 40)
-  return held and ok, held and "held while blocked" or "not held"
+  return held and ok, held and "held while its prompt box was covered" or "not held"
 end
 
 -- Run ---------------------------------------------------------------------------------
@@ -219,13 +224,14 @@ local ok, err = pcall(function()
     if dialogs[c.name] then c.dialog = pane(c.name .. " (dialog)", dialogs[c.name]) end
   end
   for _, c in ipairs(clis) do
-    if not wait_for(function() return idle(c.block) end, 40) then c.down = "never idle: " .. tostring(status(c.block)) end
+    if c.cmd and not wait_for(function() return idle(c.block) end, 40) then c.down = "never idle: " .. tostring(status(c.block)) end
   end
-  for _, name in ipairs({ "idle", "draft", "busy", "lost_enter", "resend", "dialog", "alarm" }) do
+  for _, name in ipairs({ "idle", "draft", "busy", "lost_enter", "dialog", "alarm", "shell" }) do
     for _, c in ipairs(clis) do
       if c.down then record(c.name, name, false, c.down) else
-        wait_for(function() return idle(c.block) end, 60)
-        local ok2, pass, note = pcall(scenarios[name], c)
+        if c.cmd then wait_for(function() return idle(c.block) end, 60) end
+        local ok2, pass, note = true, nil, "not for this pane"
+        if (c.name == "shell") == (name == "shell") then ok2, pass, note = pcall(scenarios[name], c) end
         if not ok2 then record(c.name, name, false, tostring(pass))
         elseif pass == nil then results[name] = results[name] or {} record(c.name, name, true, "n/a: " .. note)
         else record(c.name, name, pass, note) end

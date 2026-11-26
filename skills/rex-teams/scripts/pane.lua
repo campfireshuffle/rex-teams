@@ -11,7 +11,7 @@ local vendors = dofile(dir .. "vendors.lua")
 local pane = {}
 
 -- Sessions this script has attached to, per host. A script must attach to a
--- session before it acts on it, and attaching also brings its events here.
+-- session before it acts on it.
 local attached = {}
 local function attach(addr)
   local key = (addr.host or "") .. " " .. addr.session
@@ -40,48 +40,14 @@ local function screen_vt(addr)
   return (table.concat(parts):gsub("^[^\n]*\n", ""))
 end
 
--- Whether TEXT holds NEEDLE, ended by a character that can't be part of
--- an id, so msg 1-abcd.1 doesn't match msg 1-abcd.12.
-local function holds(text, needle)
-  local at = 1
-  while true do
-    local i, j = text:find(needle, at, true)
-    if not i then return false end
-    if not text:sub(j + 1, j + 1):match("[%w%.%-]") then return true end
-    at = j + 1
-  end
-end
-
--- What ROWS, the visible screen, show for message TAG, read with ENTRY from
--- vendors.lua: the composer, whether it holds ours, and whether "msg <tag>"
--- is on the screen above the composer. Pure, so tests feed it recorded
--- screens.
-function pane.read(entry, rows, tag)
-  local c = entry.composer(rows)
-  if not c then return nil, false end
-  -- A wrapped composer row can split the id, so compare without blanks.
-  local ours = holds((c.text:gsub("%s", "")), "msg" .. tag) and "id"
-    or vendors.token(entry, c.text) and "token" or nil
-  -- A long line can wrap between "msg" and the id, so also look across each
-  -- pair of rows, joined with their blanks collapsed.
-  local seen, prev = false, ""
-  for r = 1, c.top - 1 do
-    local text = vt.text(rows[r]):gsub("%s+", " ")
-    if holds(text, "msg " .. tag) or holds(prev .. text:gsub("^ ", ""), "msg " .. tag) then seen = true break end
-    prev = text:gsub(" $", "") .. " "
-  end
-  return { text = c.text, ours = ours }, seen
-end
-
--- look(addr, tag) -> { status, kind, app, known, composer, seen, gone }
---   status, kind: the program's OSC 7501 report (nil if it made none)
---   known: vendors.lua knows the program, so the composer can be read
---   composer: nil when none is showing, or { text, ours }, where text is
---     undimmed text and ours is "id" (it holds "msg <tag>"), "token" (just
---     one paste stand-in) or nil
---   seen: "msg <tag>" is on the screen above the composer
+-- look(addr) -> { app, known, composer, gone }
+--   app: the program, as it reports itself with OSC 7501, or its process name
+--   known: vendors.lua knows the program, so its prompt box can be read
+--   composer: nil when none is showing, or { text, token }, where text is
+--     what's typed there, without placeholders, and token is true when
+--     it's just one long-paste stand-in
 --   gone: the block no longer exists; nothing else is set
-function pane.look(addr, tag)
+function pane.look(addr)
   local found = lib.call("target.resolve", { queries = { addr.block }, kinds = { "block" } }, addr.host).results[1]
   if found.status ~= "resolved" then return { gone = true } end
   attach(addr)
@@ -95,10 +61,10 @@ function pane.look(addr, tag)
     process = p.foreground and p.foreground.name
   end
   local entry = vendors.find(app, process)
-  local look = { status = root.state, kind = root.kind, app = app or process, known = entry ~= nil, seen = false }
+  local look = { app = app or process, known = entry ~= nil }
   if not entry then return look end
-  local rows = vt.screen(screen_vt(addr), method(addr, "size").rows)
-  look.composer, look.seen = pane.read(entry, rows, tag)
+  local c = entry.composer(vt.screen(screen_vt(addr), method(addr, "size").rows))
+  look.composer = c and { text = c.text, token = vendors.token(entry, c.text) }
   return look
 end
 

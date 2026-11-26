@@ -266,6 +266,11 @@ check("team.lua on this host prints commands without host= or session=", functio
   assert(has(all, "block='block:peer-00000-bbbbbb' message='<message>'"), all)
   assert(not has(all, "host=") and not has(all, "session="), all)
 end)
+-- A queued message with every field, as mail.post writes it.
+local function full(m)
+  for k, v in pairs({ seq = 0, head = "[from Chief", tail = "] ", text = "hi" }) do if m[k] == nil then m[k] = v end end
+  return m
+end
 check("team.lua says how many messages wait for an agent, and why", function()
   reset()
   load()
@@ -273,10 +278,10 @@ check("team.lua says how many messages wait for an agent, and why", function()
   os.execute("mkdir -p '" .. tmp .. "/outbox'")
   local to = { session = "session:me", block = "block:peer-00000-bbbbbb", name = "Helper" }
   local from = { session = "session:me", block = "block:me-000000-aaaaaa", name = "Chief" }
-  mail.write({ id = "100-aaaa", posted = 100, to = to, from = from, d = { why = "someone is typing there" } })
-  mail.write({ id = "101-bbbb", posted = 101, to = to, from = from })
-  mail.write({ id = "102-cccc", posted = 102, to = to, from = from, dead = "gone" })
-  mail.write({ id = "103-dddd", posted = 103, to = to, from = from, notice = true })
+  mail.write(full({ id = "100-aaaa", posted = 100, to = to, from = from, d = { why = "there's text in its prompt box" } }))
+  mail.write(full({ id = "101-bbbb", posted = 101, to = to, from = from }))
+  mail.write(full({ id = "102-cccc", posted = 102, to = to, from = from, dead = "gone" }))
+  mail.write(full({ id = "103-dddd", posted = 103, to = to, from = from, notice = true }))
   dofile = real_dofile
   local plain = servers[""].call
   rex.call = function(method, args)
@@ -289,7 +294,7 @@ check("team.lua says how many messages wait for an agent, and why", function()
   end
   assert(run("team.lua", {}))
   local all = table.concat(printed, "\n")
-  assert(has(all, "block='block:peer-00000-bbbbbb' message='<message>'\n  (2 messages waiting: someone is typing there)\n"
+  assert(has(all, "block='block:peer-00000-bbbbbb' message='<message>'\n  (2 messages waiting: there's text in its prompt box)\n"
     .. "  (1 message not delivered; its sender was told)"), all)
 end)
 check("team.lua counts every sender's messages, and says a sender was told only when one was", function()
@@ -309,7 +314,7 @@ check("team.lua counts every sender's messages, and says a sender was told only 
   }
   local entries = {}
   for _, msg in ipairs(msgs) do
-    mail.write(msg)
+    mail.write(full(msg))
     entries[#entries + 1] = { name = msg.id .. ".json" }
   end
   -- The postman's own policy decides who is told.
@@ -329,7 +334,7 @@ check("team.lua counts every sender's messages, and says a sender was told only 
     .. "  (1 message it sent itself not delivered)"), all)
   assert(not has(all, "its sender was told"), all)
   local again = { id = "105-ffff", posted = 105, to = to, from = to, dead = "gone", head = "[alarm you set" }
-  mail.write(again)
+  mail.write(full(again))
   entries[#entries + 1] = { name = again.id .. ".json" }
   printed = {}
   assert(run("team.lua", {}))

@@ -6,11 +6,12 @@
 --     rows is the visible screen from vt.screen. text is what a person (or
 --     we) typed, dim is placeholder or suggestion text, top..bottom are the
 --     composer's rows. nil means no composer is showing, as when a dialog
---     covers it, and the postman holds.
+--     covers it. The postman pastes only into a composer that shows and
+--     holds no text.
 --   tokens: patterns for the stand-in a CLI shows for a long paste. A
 --     composer holding exactly one of them, right after our paste, holds ours.
--- A CLI that doesn't report its app is found by its process name. A CLI not
--- listed here gets no messages: the postman holds them and says why.
+-- A CLI that doesn't report its app is found by its process name. A program
+-- not listed here gets each message pasted at once.
 local vt = dofile(debug.getinfo(1, "S").source:gsub("^@", ""):match("^(.*[/\\])") .. "vt.lua")
 local vendors, cli = {}, {}
 
@@ -36,8 +37,8 @@ cli["claude-code"] = {
 cli.codex = {
   -- The last bold "›" at column 1 or 2. Wrapped rows indent 2 or more, and
   -- the box ends at a blank row. Placeholders are SGR dim. An approval list
-  -- ("› 1. Yes") looks the same, which is why the postman checks blocked
-  -- first and never treats text that isn't ours as safe.
+  -- ("› 1. Yes") looks the same, and reads as text in the box, so the
+  -- postman waits.
   composer = function(rows)
     for r = #rows, 1, -1 do
       local f = vt.first(rows[r])

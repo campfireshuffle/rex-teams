@@ -213,8 +213,12 @@ end)
 trial("list reads the queue oldest first, and filters by receiver", function()
   local here = mail.list
   os.execute("mkdir -p " .. quote(root .. "/outbox"))
-  mail.write({ id = "200-bbbb", posted = 200, to = { block = "block:peer" } })
-  mail.write({ id = "100-aaaa", posted = 100, to = { block = "block:far", host = "ws" } })
+  local function full(m)
+    m.seq, m.from, m.head, m.tail, m.text = 0, { block = "block:me" }, "[from Chief", "] ", "hi"
+    return m
+  end
+  mail.write(full({ id = "200-bbbb", posted = 200, to = { block = "block:peer" } }))
+  mail.write(full({ id = "100-aaaa", posted = 100, to = { block = "block:far", host = "ws" } }))
   rex.call = function(method, args)
     if method == "block.method" and args.method == "list_dir" then
       return { status = "ok", entries = { { name = "200-bbbb.json" }, { name = "100-aaaa.json" }, { name = "100-aaaa.json.tmp" }, { name = "x" } } }
@@ -225,6 +229,12 @@ trial("list reads the queue oldest first, and filters by receiver", function()
   assert(#all == 2 and all[1].id == "100-aaaa" and all[2].id == "200-bbbb")
   local one = here({ block = "block:far", host = "ws" })
   assert(#one == 1 and one[1].id == "100-aaaa")
+  -- Every field is required: a file without one is an error that names it.
+  local bare = full({ id = "200-bbbb", posted = 200, to = { block = "block:peer" } })
+  bare.seq = nil
+  mail.write(bare)
+  local ok, err = pcall(here)
+  assert(not ok and tostring(err):find("200-bbbb.json has no seq", 1, true), tostring(err))
 end)
 trial("a write of a file someone deleted doesn't bring it back", function()
   os.execute("mkdir -p " .. quote(root .. "/outbox"))

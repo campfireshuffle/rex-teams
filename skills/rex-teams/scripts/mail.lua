@@ -63,18 +63,24 @@ end
 -- the messages to one receiver posted in the same second.
 function mail.before(a, b)
   if a.posted ~= b.posted then return a.posted < b.posted end
-  if (a.seq or 0) ~= (b.seq or 0) then return (a.seq or 0) < (b.seq or 0) end
+  if a.seq ~= b.seq then return a.seq < b.seq end
   return a.id < b.id
 end
 
+-- The fields every queued message has.
+local required = { "id", "posted", "seq", "to", "from", "head", "tail", "text" }
+
 -- The queue, oldest first. FILTER may name { block, host } to list only the
--- messages to one receiver.
+-- messages to one receiver. A file missing a field is an error naming it.
 function mail.list(filter)
   local out = {}
   for _, id in ipairs(ids()) do
     local f = io.open(mail.file(id))
     local msg = f and rex.json.decode(f:read("*a"))
     if f then f:close() end
+    for _, k in ipairs(msg and required or {}) do
+      if msg[k] == nil then error(mail.file(id) .. " has no " .. k .. "; delete it to drop that message", 0) end
+    end
     if msg and (not filter or (msg.to.block == filter.block and msg.to.host == filter.host)) then out[#out + 1] = msg end
   end
   table.sort(out, mail.before)
@@ -86,7 +92,7 @@ end
 local function seq(to, now)
   local n = 0
   for _, msg in ipairs(mail.list({ block = to.block, host = to.host })) do
-    if msg.posted == now then n = math.max(n, (msg.seq or 0) + 1) end
+    if msg.posted == now then n = math.max(n, msg.seq + 1) end
   end
   return n
 end

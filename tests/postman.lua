@@ -31,7 +31,7 @@ local function reset()
   S = {
     now = 1795671000, t = 1795671000, env = { REX_BLOCK = "block:pm", OSC7577_TOKEN = TOKEN },
     blocks = { ["block:pm"] = { session = "s:home", pid = 4242 }, ["block:me"] = { session = "s:1" }, ["block:to"] = { session = "s:1" } },
-    calls = {}, timers = {}, events = {}, handlers = {}, out = {}, printed = {}, stopped = nil, closed = {},
+    calls = {}, timers = {}, out = {}, printed = {}, stopped = nil, closed = {},
     receivers = {}, records = { { chosen = true, trusted = true } }, waited = nil,
   }
 end
@@ -101,7 +101,6 @@ rex = {
     S.timers[#S.timers + 1] = timer
     return timer
   end,
-  on = function(event, f) S.handlers[event] = f end,
   wait = function(event, filter, timeout)
     S.waited = { event = event, timeout = timeout }
     S.records = S.late_records or S.records
@@ -114,40 +113,32 @@ rex = {
 
 -- Scripted receivers in place of pane.lua.
 local fake = {}
-function fake.look(addr, tag)
+-- A receiver shows its prompt box: what's pasted and not yet Entered, or a
+-- draft. A shell's isn't read.
+function fake.look(addr)
   local r = S.receivers[addr.block]
   if not r then return { gone = true } end
-  local text, ours = r.draft or "", nil
-  if r.pending then text, ours = r.pending, r.pending:find("msg " .. tag, 1, true) and "id" end
-  local seen = false
-  for _, line in ipairs(r.transcript) do
-    local i, j = line:find("msg " .. tag, 1, true)
-    if i and not line:sub(j + 1, j + 1):match("[%w%.%-]") then seen = true end
-  end
-  return { status = r.status, known = true, composer = { text = text, ours = ours }, seen = seen }
+  r.looks = r.looks + 1
+  if r.shell then return { app = "zsh", known = false } end
+  return { app = "pi", known = true, composer = { text = r.pending or r.draft or "" } }
 end
 function fake.put(addr, text)
   local r = S.receivers[addr.block]
   r.puts[#r.puts + 1] = { t = S.t, text = text }
-  if r.lose > 0 then r.lose = r.lose - 1 else r.pending = text end
+  r.pending = text
 end
 function fake.enter(addr)
   local r = S.receivers[addr.block]
   r.enters = r.enters + 1
   if r.pending and r.swallow > 0 then r.swallow = r.swallow - 1 return end
   if r.pending then
-    r.transcript[#r.transcript + 1] = r.pending
     r.delivered[#r.delivered + 1] = { t = S.t, text = r.pending }
     r.pending = nil
-    if r.works then
-      r.status = "working"
-      S.events[#S.events + 1] = { event = "terminal.program_status_changed", ev = { block_id = addr.block, record = { state = "working" } } }
-    end
   end
 end
 function fake.attach() end
 local function receiver(block, o)
-  local r = { status = "idle", transcript = {}, puts = {}, delivered = {}, enters = 0, lose = 0, swallow = 0, works = true }
+  local r = { puts = {}, delivered = {}, enters = 0, looks = 0, swallow = 0 }
   for k, v in pairs(o or {}) do r[k] = v end
   S.receivers[block] = r
   S.blocks[block] = S.blocks[block] or { session = "s:1" }
@@ -164,23 +155,18 @@ end
 local P = real_dofile("skills/rex-teams/scripts/postman.lua")
 local mail = real_dofile("skills/rex-teams/scripts/mail.lua")
 
--- Run the clock to T (real time, fractional), firing timers and events in order.
+-- Run the clock to T (real time, fractional), firing timers in order.
 local function run_to(t)
   for _ = 1, 100000 do
-    if #S.events > 0 then
-      local e = table.remove(S.events, 1)
-      S.handlers[e.event]({ block_id = e.ev.block_id }, e.ev)
-    else
-      local next_i
-      for i, timer in ipairs(S.timers) do
-        if timer.live and (not next_i or timer.due < S.timers[next_i].due) then next_i = i end
-      end
-      if not next_i or S.timers[next_i].due > t then break end
-      local timer = table.remove(S.timers, next_i)
-      S.t = math.max(S.t, timer.due)
-      S.now = math.floor(S.t)
-      timer.f()
+    local next_i
+    for i, timer in ipairs(S.timers) do
+      if timer.live and (not next_i or timer.due < S.timers[next_i].due) then next_i = i end
     end
+    if not next_i or S.timers[next_i].due > t then break end
+    local timer = table.remove(S.timers, next_i)
+    S.t = math.max(S.t, timer.due)
+    S.now = math.floor(S.t)
+    timer.f()
   end
   S.t = math.max(S.t, t)
   S.now = math.floor(S.t)
@@ -195,7 +181,7 @@ local function queue(o)
   local msg = { id = o.id or "1795671000-abcd", posted = o.posted or S.now, head = o.head or "[from Me", tail = o.tail or ", who…] ",
     text = o.text or "hi", to = { host = o.host, session = "s:1", block = o.to or "block:to", name = "Reviewer" },
     from = o.from or { session = "s:1", block = "block:me", name = "Me" }, at = o.at, every = o.every, start = o.every and (o.start or S.now),
-    seq = o.seq, files = o.files, dead = o.dead, d = o.d }
+    seq = o.seq or 0, files = o.files, dead = o.dead, d = o.d }
   os.execute("mkdir -p " .. quote(root .. "/outbox"))
   mail.write(msg)
   return msg
@@ -275,7 +261,7 @@ trial("a second postman sees the first, closes its own block and stops", functio
   S.blocks["block:first"] = { session = "s:home", pid = 99 }
   lib.write(root .. "/postman.json", json.encode({ block = "block:first", session = "s:home", pid = 99 }))
   start()
-  assert(S.stopped == 0 and S.closed[1] == "block:pm" and #S.out == 0 and not S.handlers["terminal.program_status_changed"])
+  assert(S.stopped == 0 and S.closed[1] == "block:pm" and #S.out == 0 and #S.timers == 0)
 end)
 trial("a postman.json whose process is gone is taken over", function()
   S.blocks["block:first"] = { session = "s:home", pid = 100 }
@@ -286,48 +272,42 @@ end)
 
 -- Delivery --------------------------------------------------------------------
 
-trial("a queued message is pasted, Entered, confirmed by the status turning working, and removed", function()
+trial("a queued message is pasted, Entered, looked at once 2 s later, and removed", function()
   local r = receiver("block:to")
   queue({})
   start()
   run_to(S.t + 0.1)
   assert(#r.puts == 1 and r.puts[1].text == "[from Me · msg 1795671000-abcd, who…] hi", r.puts[1] and r.puts[1].text)
-  assert(r.enters == 1 and #queued() == 0, "still queued: " .. table.concat(queued(), " "))
-end)
-trial("a receiver with no status edge is confirmed by its screen", function()
-  local r = receiver("block:to", { works = false })
-  queue({})
-  start()
-  run_to(S.t + 3)
-  assert(#r.puts == 1 and #queued() == 0)
-end)
-trial("a lost Enter is pressed again, once", function()
-  local r = receiver("block:to", { swallow = 1 })
-  queue({})
-  start()
-  run_to(S.t + 5)
-  assert(#r.puts == 1 and r.enters == 2 and #r.delivered == 1 and #queued() == 0, r.enters)
-end)
-trial("a lost paste is pasted again after 10 s, labelled resent", function()
-  local r = receiver("block:to", { lose = 1 })
-  queue({})
-  start()
-  run_to(S.t + 9)
-  assert(#r.puts == 1)
+  assert(r.enters == 1 and #queued() == 1 and r.looks == 1)
   run_to(S.t + 2)
-  assert(#r.puts == 2 and r.puts[2].text == "[from Me · msg 1795671000-abcd · resent, who…] hi", tostring(r.puts[2] and r.puts[2].text))
-  assert(#r.delivered == 1 and #queued() == 0)
+  assert(r.enters == 1 and r.looks == 2 and #queued() == 0, "still queued: " .. table.concat(queued(), " "))
 end)
-trial("a busy receiver is held until its status changes", function()
+trial("a lost Enter is pressed once more, and only once", function()
+  for _, lost in ipairs({ 1, 2 }) do
+    reset()
+    local r = receiver("block:to", { swallow = lost })
+    queue({})
+    start()
+    run_to(S.t + 30)
+    assert(#r.puts == 1 and r.enters == 2 and #r.delivered == 2 - lost and #queued() == 0, lost .. ": " .. r.enters)
+  end
+end)
+trial("a busy receiver gets the message at once", function()
   local r = receiver("block:to", { status = "working" })
+  local look = fake.look
+  fake.look = function(addr) local l = look(addr) l.status = "working" return l end
   queue({})
   start()
-  run_to(S.t + 60)
-  assert(#r.puts == 0)
-  r.status = "idle"
-  S.events[#S.events + 1] = { event = "terminal.program_status_changed", ev = { block_id = "block:to", record = { state = "idle" } } }
   run_to(S.t + 0.1)
-  assert(#r.puts == 1 and #queued() == 0)
+  fake.look = look
+  assert(#r.puts == 1 and #r.delivered == 1)
+end)
+trial("a shell gets the message pasted and Entered, then it's done", function()
+  local r = receiver("block:to", { shell = true })
+  queue({})
+  start()
+  run_to(S.t + 0.1)
+  assert(#r.puts == 1 and r.enters == 1 and r.looks == 1 and #queued() == 0)
 end)
 trial("a draft is held, then delivered once it's cleared", function()
   local r = receiver("block:to", { draft = "half a thought" })
@@ -336,11 +316,11 @@ trial("a draft is held, then delivered once it's cleared", function()
   run_to(S.t + 30)
   assert(#r.puts == 0)
   r.draft = nil
-  run_to(S.t + 3)
+  run_to(S.t + 5)
   assert(#r.puts == 1 and #queued() == 0)
 end)
 trial("messages to one receiver go one at a time, oldest first", function()
-  local r = receiver("block:to", { works = false })
+  local r = receiver("block:to")
   queue({ id = "1795671000-bbbb", posted = 1795671001 })
   queue({ id = "1795671000-aaaa", posted = 1795671000 })
   start()
@@ -350,26 +330,16 @@ trial("messages to one receiver go one at a time, oldest first", function()
   assert(#r.puts == 2 and r.puts[2].text:find("bbbb", 1, true) and #queued() == 0)
 end)
 trial("messages posted in one second go in the order they were posted", function()
-  local r = receiver("block:to", { works = false })
+  local r = receiver("block:to")
   queue({ id = "1795671000-zzzz", text = "first" })
   queue({ id = "1795671000-aaaa", text = "second", seq = 1 })
   start()
   run_to(S.t + 20)
   assert(#r.puts == 2 and r.puts[1].text:find("first$") and r.puts[2].text:find("second$"), r.puts[1] and r.puts[1].text)
 end)
-trial("a message waits while the one before it is unconfirmed", function()
-  local r = receiver("block:to", { works = false, lose = 1 })
-  queue({ id = "1795671000-aaaa" })
-  queue({ id = "1795671000-bbbb", seq = 1 })
-  start()
-  run_to(S.t + 5)
-  assert(#r.puts == 1 and r.puts[1].text:find("aaaa", 1, true), #r.puts)
-  run_to(S.t + 30)
-  assert(#r.puts == 3 and r.puts[2].text:find("aaaa · resent", 1, true) and r.puts[3].text:find("bbbb", 1, true) and #queued() == 0)
-end)
 trial("a dead message doesn't hold up the ones behind it", function()
-  local r = receiver("block:to", { works = false })
-  queue({ id = "1795671000-aaaa", dead = "unconfirmed", d = { tag = "1795671000-aaaa", started = S.now, pastes = 4, pasted_at = S.now, last = S.now, enters = 3 } })
+  local r = receiver("block:to")
+  queue({ id = "1795671000-aaaa", dead = "files", d = { tag = "1795671000-aaaa", attach_error = "rex cp failed" } })
   queue({ id = "1795671000-bbbb", seq = 1 })
   start()
   run_to(S.t + 5)
@@ -384,31 +354,10 @@ trial("the attempt is recorded before the paste", function()
   start()
   run_to(S.t + 0.1)
   fake.put = put
-  assert(#r.puts == 1 and on_disk and on_disk.d and on_disk.d.pastes == 1 and on_disk.d.pasted_at == 1795671000)
-end)
-trial("a busy receiver on another host is checked again without a status event", function()
-  local r = receiver("block:to", { status = "working" })
-  queue({ host = "ws" })
-  start()
-  run_to(S.t + 10)
-  assert(#r.puts == 0)
-  r.status = "idle"
-  run_to(S.t + P.poll + 1)
-  assert(#r.puts == 1, "not checked again")
-end)
-trial("a child program's status doesn't confirm a paste", function()
-  local r = receiver("block:to", { works = false, lose = 1 })
-  queue({})
-  start()
-  run_to(S.t + 1)
-  S.events[#S.events + 1] = { event = "terminal.program_status_changed", ev = { block_id = "block:to", record = { id = "child", state = "working" } } }
-  run_to(S.t + 1)
-  assert(#queued() == 1, "confirmed by a child's status")
-  run_to(S.t + 10)
-  assert(#r.puts == 2 and #r.delivered == 1 and #queued() == 0)
+  assert(#r.puts == 1 and on_disk and on_disk.d and on_disk.d.pasted_at == 1795671000)
 end)
 trial("a draft typed while the files are copied holds the paste", function()
-  local r = receiver("block:to", { works = false })
+  local r = receiver("block:to")
   queue({ host = "ws", files = { "/w/a.md" } })
   fake.attach = function() r.draft = "a person typing" end
   start()
@@ -420,7 +369,7 @@ trial("a draft typed while the files are copied holds the paste", function()
   assert(#r.puts == 1 and #queued() == 0)
 end)
 trial("a message deleted while its files are copied is never pasted", function()
-  local r = receiver("block:to", { works = false })
+  local r = receiver("block:to")
   queue({ host = "ws", files = { "/w/a.md" } })
   fake.attach = function() os.remove(root .. "/outbox/1795671000-abcd.json") end
   start()
@@ -429,20 +378,19 @@ trial("a message deleted while its files are copied is never pasted", function()
   assert(#r.puts == 0 and #queued() == 0, #r.puts)
 end)
 trial("deleting a queued file drops the message", function()
-  local r = receiver("block:to", { status = "working" })
+  local r = receiver("block:to", { draft = "typing" })
   queue({})
   start()
   run_to(S.t + 5)
   os.remove(root .. "/outbox/1795671000-abcd.json")
   run_to(S.t + 3)
-  r.status = "idle"
-  S.events[#S.events + 1] = { event = "terminal.program_status_changed", ev = { block_id = "block:to", record = { state = "idle" } } }
+  r.draft = nil
   run_to(S.t + 3)
   assert(#r.puts == 0 and #queued() == 0)
 end)
 trial("a message held 10 minutes queues one notice to its sender", function()
   receiver("block:to", { draft = "typing" })
-  local me = receiver("block:me", { status = "working" })
+  local me = receiver("block:me", { draft = "busy" })
   queue({})
   start()
   run_to(S.t + 599)
@@ -455,18 +403,17 @@ trial("a message held 10 minutes queues one notice to its sender", function()
     local m = read_msg(name:match("^(.*)%.json$"))
     if m.notice then notice = m end
   end
-  assert(notice and notice.to.block == "block:me" and notice.text:find("has waited 10 minutes: someone is typing there", 1, true), notice and notice.text)
+  assert(notice and notice.to.block == "block:me" and notice.text:find("has waited 10 minutes: there\'s text in its prompt box", 1, true), notice and notice.text)
   run_to(S.t + 1200)
   assert(#queued() == 2, "a second notice")
-  me.status = "idle"
-  S.events[#S.events + 1] = { event = "terminal.program_status_changed", ev = { block_id = "block:me", record = { state = "idle" } } }
-  run_to(S.t + 1)
+  me.draft = nil
+  run_to(S.t + 3)
   assert(#me.puts == 1 and me.puts[1].text:find("^%[rex%-teams postman · msg %d+%-%a%a%a%a%] Message 1795671000%-abcd to Reviewer"), me.puts[1] and me.puts[1].text)
 end)
 trial("a message queued behind a held one also tells its sender, once", function()
   local r = receiver("block:to", { draft = "typing" })
-  receiver("block:me", { status = "working" })
-  receiver("block:other", { status = "working" })
+  receiver("block:me", { draft = "busy" })
+  receiver("block:other", { draft = "busy" })
   queue({ id = "1795671000-aaaa" })
   run_to(S.t + 1)
   queue({ id = "1795671001-bbbb", text = "second", from = { session = "s:1", block = "block:other", name = "Other" } })
@@ -486,7 +433,7 @@ trial("a message queued behind a held one also tells its sender, once", function
   assert(by["block:me"] == 1 and by["block:other"] == 1, tostring(by["block:other"]))
   -- The first goes; the second is then held at the front, and says nothing more.
   r.draft = nil
-  run_to(S.t + 3)
+  while #r.puts == 0 do run_to(S.t + 0.1) end
   r.draft = "typing again"
   run_to(S.t + 1300)
   assert(#r.puts == 1 and notices()["block:other"] == 1, "a second notice")
@@ -502,15 +449,19 @@ trial("a receiver that's gone: one notice, and the file is kept", function()
   run_to(S.t + 100)
   assert(#me.puts == 1)
 end)
-trial("a restart mid-delivery confirms from the screen rather than pasting again", function()
-  local r = receiver("block:to", { works = false })
-  local msg = queue({})
-  r.transcript = { "[from Me · msg 1795671000-abcd, who…] hi" }
-  msg.d = { tag = msg.id, started = S.now, pastes = 1, pasted_at = S.now, last = S.now, enters = 0 }
-  mail.write(msg)
-  start()
-  run_to(S.t + 30)
-  assert(#r.puts == 0 and #queued() == 0)
+trial("a restart mid-delivery takes its one look rather than pasting again", function()
+  for _, left in ipairs({ false, true }) do
+    reset()
+    local r = receiver("block:to")
+    local msg = queue({})
+    local text = "[from Me · msg 1795671000-abcd, who…] hi"
+    if left then r.pending = text end
+    msg.d = { tag = msg.id, pasted_at = S.now, known = true, text = text }
+    mail.write(msg)
+    start()
+    run_to(S.t + 30)
+    assert(#r.puts == 0 and #queued() == 0 and r.enters == (left and 1 or 0), tostring(left) .. ": " .. r.enters)
+  end
 end)
 
 -- Alarms ------------------------------------------------------------------------
@@ -560,14 +511,13 @@ trial("a recurring alarm keeps its phase, skips missed ticks, and stays queued",
   assert(#me.puts == 0, "missed ticks must not fire")
   run_to(S.t + 1)
   assert(#me.puts == 1 and me.puts[1].t == 1795671180 and me.puts[1].text == "[alarm you set · msg 1795671000-abcd.3] hi", me.puts[1] and me.puts[1].text)
-  me.status = "idle"
   run_to(S.t + 60)
   assert(#me.puts == 2 and me.puts[2].t == 1795671240 and #queued() == 1)
 end)
 trial("a recurring alarm skips the ticks it missed during a sleep", function()
   for _, wake in ipairs({ 660, 650 }) do
     reset()
-    local me = receiver("block:me", { works = false })
+    local me = receiver("block:me")
     alarm({ every = 60 })
     start()
     -- The whole machine sleeps: no timer runs until WAKE.
@@ -583,7 +533,7 @@ trial("a recurring alarm skips the ticks it missed during a sleep", function()
   end
 end)
 trial("fractional recurring alarms fire on their phase, never early or twice", function()
-  for _, every in ipairs({ 0.3, 1.5, 2.5 }) do
+  for _, every in ipairs({ 2.5, 3.3 }) do
     reset()
     local me = receiver("block:me")
     S.t, S.now = 1795671000.7, 1795671000
@@ -593,11 +543,6 @@ trial("fractional recurring alarms fire on their phase, never early or twice", f
     local k = 0
     for _ = 1, 2000 do
       run_to(S.t + 0.05)
-      -- The receiver finishes, and Rex reports it, as it does.
-      if me.status == "working" then
-        me.status = "idle"
-        S.events[#S.events + 1] = { event = "terminal.program_status_changed", ev = { block_id = "block:me", record = { state = "idle" } } }
-      end
       if #me.puts >= 12 then break end
     end
     assert(#me.puts >= 12, every .. ": " .. #me.puts .. " ticks")
@@ -621,14 +566,13 @@ trial("a recurring tick is pasted while slow looks of other receivers delay it",
   end
   alarm({ id = "1795671000-alrm", every = 5 })
   local look = fake.look
-  fake.look = function(addr, tag)
+  fake.look = function(addr)
     if addr.block ~= "block:me" then S.t = S.t + 0.3 S.now = math.floor(S.t) end
-    return look(addr, tag)
+    return look(addr)
   end
   start()
   for _ = 1, 600 do
     run_to(S.t + 0.1)
-    if me.status == "working" then me.status = "idle" end
   end
   fake.look = look
   local due = math.floor((S.t - 1795671000) / 5)

@@ -69,74 +69,72 @@ local function trial(name, f)
   if not ok then failed = failed + 1 end
   print((ok and "ok " or "not ok ") .. n .. " - " .. name .. (ok and "" or ": " .. tostring(err)))
 end
-local function look(name, tag)
+local function look(name)
   local b = fixture(name)
   reset({ ["b:1"] = b })
-  return pane.look({ session = "s:1", block = "b:1" }, tag or "1795671000-abcd")
+  return pane.look({ session = "s:1", block = "b:1" })
 end
 
 for _, app in ipairs({ "claude-code", "codex", "opencode", "pi" }) do
-  trial(app .. ": empty, idle, known, nothing seen", function()
+  trial(app .. ": empty and known", function()
     local l = look("empty@" .. app)
-    assert(l.status == "idle" and l.known and l.app == app, tostring(l.status) .. " " .. tostring(l.app))
-    assert(l.composer and l.composer.text == "" and l.composer.ours == nil and l.seen == false)
+    assert(l.known and l.app == app, tostring(l.app))
+    assert(l.composer and l.composer.text == "" and not l.composer.token)
   end)
-  trial(app .. ": a draft isn't ours", function()
+  trial(app .. ": a draft is text in the box", function()
     local l = look("draft@" .. app)
-    assert(l.composer.text == "hello there draft" and l.composer.ours == nil)
+    assert(l.composer.text == "hello there draft" and not l.composer.token)
   end)
-  trial(app .. ": our unsent paste is ours, by its id or as one token", function()
-    local l = look("ours-text@" .. app)
-    assert(l.composer.ours == (app == "opencode" and "token" or "id"), tostring(l.composer.ours))
-    assert(l.seen == false, "the composer's own text must not count as seen")
-    l = look("ours-token@" .. app, "1795671000-wxyz")
-    assert(l.composer.ours == "token" and not l.seen, tostring(l.composer.ours))
-  end)
-  trial(app .. ": a delivered message is seen above the composer", function()
-    local l = look("delivered@" .. app, "1795671000-dlvr")
-    assert(l.seen == true and l.composer.text == "" and l.composer.ours == nil)
-    assert(look("delivered@" .. app, "1795671000-dlv").seen == false, "a prefix of the id isn't the id")
-    assert(look("delivered@" .. app, "1795671000-abcd").seen == false)
+  trial(app .. ": a long paste's stand-in is a token", function()
+    assert(look("ours-token@" .. app).composer.token)
   end)
 end
-trial("a dialog: blocked, with text that isn't ours", function()
+trial("a dialog: text in the box", function()
   local l = look("dialog@codex")
-  assert(l.status == "blocked" and l.kind == "permission")
-  assert(l.composer and l.composer.text ~= "" and l.composer.ours == nil)
+  assert(l.composer and l.composer.text ~= "" and not l.composer.token)
 end)
-trial("an id that wraps between msg and the id is still seen", function()
-  local rows = { {}, {}, {} }
-  local function row(s) local r = {} for ch in s:gmatch("[%z\1-\127\194-\244][\128-\191]*") do r[#r + 1] = { ch = ch } end return r end
-  rows = { row("  [from Someone With A Long Name · msg"), row("  1795671000-abcd, who can't see"), row("❯ ") }
-  local entry = { composer = function() return { text = "", dim = "", top = 3, bottom = 3 } end, tokens = {} }
-  local c, seen = pane.read(entry, rows, "1795671000-abcd")
-  assert(c and seen, "not seen across the wrap")
-end)
-trial("text a person adds to our unsent paste makes it not ours, so no Enter submits their draft", function()
-  local P = dofile("skills/rex-teams/scripts/postman.lua")
-  local m = { id = "100-abcd", posted = 100, head = "[from Me", tail = "] ", text = "hi",
-    to = { session = "s:1", block = "b:to", name = "R" }, from = { session = "s:1", block = "b:me", name = "Me" } }
-  local pasted = P.step(m, { status = "idle", known = true, composer = { text = "" } }, 100).text
-  for _, text in ipairs({ pasted .. " MY UNFINISHED DRAFT", "wait " .. pasted }) do
-    local entry = { composer = function() return { text = text, dim = "", top = 2, bottom = 2 } end, tokens = {} }
-    local c, seen = pane.read(entry, { {}, {} }, "100-abcd")
-    assert(c.text == text and not seen)
-    local a = P.step(m, { status = "idle", known = true, composer = c, seen = seen }, 103)
-    assert(a.kind ~= "enter", "Enter pressed on " .. text)
-  end
-end)
+
+-- #40: the CLI loses the Enter after our paste. The one look 2 s later
+-- finds our text still in its box (ours-text, or ours-token for a long
+-- paste) and presses Enter once more; a box that's empty again gets none.
+local P = dofile("skills/rex-teams/scripts/postman.lua")
+local function deliver(app, screen)
+  local m = { id = "1795671000-abcd", posted = 100, head = "[from Sender",
+    tail = ", who can't see this screen. Don't rename the Rex session or your tab. Reply by running: rex do '/x/send.lua' block='block:me' message='<reply>'] ",
+    text = "Test only: do not reply or run anything.",
+    to = { session = "s:1", block = "b:1", name = "R" }, from = { session = "s:1", block = "b:me", name = "Me" } }
+  assert(P.step(m, look("empty@" .. app), 100).kind == "put")
+  assert(P.step(m, nil, 102).kind == "look")
+  local kinds = { P.step(m, look(screen .. "@" .. app), 102).kind }
+  if kinds[1] == "enter" then kinds[2] = P.step(m, nil, 103).kind end
+  return table.concat(kinds, " ")
+end
+for _, app in ipairs({ "claude-code", "codex", "opencode", "pi" }) do
+  trial(app .. ": a lost Enter leaves our text in the box: one more Enter, then done", function()
+    for _, screen in ipairs({ "ours-text", "ours-token" }) do
+      local got = deliver(app, screen)
+      assert(got == "enter done", screen .. ": " .. got)
+    end
+  end)
+  trial(app .. ": our text gone at the look: done, no second Enter", function()
+    for _, screen in ipairs({ "empty", "delivered" }) do
+      local got = deliver(app, screen)
+      assert(got == "done", screen .. ": " .. got)
+    end
+  end)
+end
 trial("a pane that's gone reads as gone and nothing else is asked", function()
   reset({})
-  local l = pane.look({ session = "s:1", block = "b:gone" }, "x")
+  local l = pane.look({ session = "s:1", block = "b:gone" })
   assert(l.gone and #calls == 1, table.concat(calls, ", "))
 end)
 trial("a program Rex has no status for, or an unknown one, isn't read", function()
   reset({ ["b:1"] = { session = "s:1", records = {}, process = "bash", vt = "" } })
-  local l = pane.look({ session = "s:1", block = "b:1" }, "x")
-  assert(not l.known and l.app == "bash" and l.status == nil and l.composer == nil)
+  local l = pane.look({ session = "s:1", block = "b:1" })
+  assert(not l.known and l.app == "bash" and l.composer == nil)
   for _, c in ipairs(calls) do assert(not c:find("format"), "read the screen of an unknown program") end
   reset({ ["b:1"] = { session = "s:1", records = { { app = "aider", state = "idle" } }, vt = "" } })
-  l = pane.look({ session = "s:1", block = "b:1" }, "x")
+  l = pane.look({ session = "s:1", block = "b:1" })
   assert(not l.known and l.app == "aider")
 end)
 trial("a CLI without an app is found by its process name", function()
@@ -144,22 +142,21 @@ trial("a CLI without an app is found by its process name", function()
   b.records = { { state = "idle" } }
   b.process = "codex"
   reset({ ["b:1"] = b })
-  local l = pane.look({ session = "s:1", block = "b:1" }, "x")
+  local l = pane.look({ session = "s:1", block = "b:1" })
   assert(l.known and l.app == "codex" and l.composer.text == "")
 end)
-trial("the root status record is used, not a child's", function()
+trial("the app comes from the root status record, not a child's", function()
   local b = fixture("empty@opencode")
-  b.records = { { app = "opencode", id = "task/1", state = "working" }, { app = "opencode", state = "idle" } }
+  b.records = { { app = "aider", id = "task/1", state = "working" }, { app = "opencode", state = "idle" } }
   reset({ ["b:1"] = b })
-  assert(pane.look({ session = "s:1", block = "b:1" }, "x").status == "idle")
+  assert(pane.look({ session = "s:1", block = "b:1" }).app == "opencode")
 end)
 trial("a long scrollback is read from its tail", function()
-  local b = fixture("delivered@pi")
+  local b = fixture("draft@pi")
   b.vt = string.rep("old line\r\n", 20000) .. b.vt
   b.big = true
   reset({ ["b:1"] = b })
-  local l = pane.look({ session = "s:1", block = "b:1" }, "1795671000-dlvr")
-  assert(l.seen and l.composer.text == "")
+  assert(pane.look({ session = "s:1", block = "b:1" }).composer.text == "hello there draft")
 end)
 trial("put pastes, and enter presses and releases Enter, in the addressed pane", function()
   reset({ ["b:1"] = { session = "s:1" } })
@@ -176,7 +173,7 @@ trial("another host's pane is looked at and typed into through rex.server", func
   reset({}, { ["b:far"] = fixture("empty@pi") })
   servers.ws.call = server("ws", { ["b:far"] = (function() local f = fixture("empty@pi") f.session = "s:far" return f end)() }).call
   local addr = { host = "ws", session = "s:far", block = "b:far" }
-  local l = pane.look(addr, "x")
+  local l = pane.look(addr)
   pane.put(addr, "hi")
   pane.enter(addr)
   assert(l.known and l.composer.text == "")

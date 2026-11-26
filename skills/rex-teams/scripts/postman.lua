@@ -16,11 +16,7 @@ local mail = dofile(dir .. "mail.lua")
 local M = {}
 M.script = dir .. "postman.lua"
 
--- How long a message waits after a paste before it's pasted again, when
--- there's evidence the paste was lost.
-M.resend = { 10, 30, 60 }
-M.enters = 3 -- Enters pressed again while our text sits in the composer
-M.enter_gap = 2 -- seconds between those Enters
+M.enter_gap = 2 -- seconds after the paste, the one look at the prompt box
 M.held_notice = 600 -- a held message tells its sender once, after this long
 M.poll = 2 -- seconds between checks of the outbox and of held receivers
 
@@ -37,22 +33,14 @@ local function self_addressed(msg)
   return msg.to.host == nil and msg.to.block == msg.from.block
 end
 
--- Why a receiver can't take a message now, or nil when it can: it isn't
--- blocked or working, its composer is showing, and holds nothing.
+-- Why a receiver can't take a message now, or nil when it can. A CLI that
+-- vendors.lua knows takes one when its prompt box is showing and empty,
+-- busy or not. Any other program, a shell too, takes it at once.
 function M.why(look)
   if look.error then return "rex-teams can't reach it (" .. look.error .. ")" end
-  if look.status == "blocked" then
-    return look.kind == "permission" and "it's asking for permission"
-      or look.kind == "question" and "it's asking a question"
-      or look.kind == "auth" and "it's asking to sign in"
-      or "it's waiting on a prompt"
-  end
-  if look.status == "working" then return "it's busy" end
-  if not look.known then
-    return "rex-teams can't read the prompt box of " .. (look.app and ("'" .. look.app .. "'") or "that program")
-  end
+  if not look.known then return nil end
   if not look.composer then return "its prompt box isn't showing" end
-  if look.composer.text ~= "" then return "someone is typing there" end
+  if look.composer.text ~= "" then return "there's text in its prompt box" end
 end
 
 local function notice(msg, why, text)
@@ -62,38 +50,40 @@ end
 
 local function give_up(msg, why, text)
   msg.dead = why
-  local a = notice(msg, why, text)
-  return a
+  return notice(msg, why, text)
 end
 
--- Hold message MSG, in delivery state D, because of WHY, and tell its
--- sender once if it's held for long.
-local function hold(msg, d, look, why, now)
+-- Hold message MSG, in delivery state D, because of WHY, look again
+-- shortly, and tell its sender once if it's held for long.
+local function hold(msg, d, why, now)
   d.held_since, d.why = d.held_since or now, why
-  if not d.noticed and now - d.held_since >= M.held_notice then
+  if not d.noticed and now - d.held_since >= M.held_notice and not (msg.notice or self_addressed(msg)) then
     d.noticed = true
     return notice(msg, "held", "Message " .. msg.id .. " to " .. msg.to.name .. " has waited "
       .. math.floor((now - d.held_since) / 60) .. " minutes: " .. why .. ". It goes out once that clears. To drop it, delete "
       .. mail.file(msg.id) .. ".")
   end
-  -- A busy or blocked receiver reports when it's done; the rest are
-  -- checked again shortly.
-  local event = look.status == "working" or look.status == "blocked"
-  return { kind = "hold", why = why, at = not event and now + M.poll or nil,
-    until_notice = not d.noticed and d.held_since + M.held_notice or nil }
+  return { kind = "hold", why = why, at = now + M.poll }
 end
 
 -- A composer's text without its blanks, which wrapping adds.
 local function squash(text) return (text:gsub("%s", "")) end
 
+-- Delivered: a one-shot is removed, a recurring alarm waits for its next tick.
+local function delivered(msg)
+  if not msg.every then return { kind = "done" } end
+  msg.d = nil
+  return { kind = "save", at = msg.due }
+end
+
 -- The delivery policy. STEP looks at one message and what its receiver's
 -- pane shows, updates the message's delivery state, and says what to do:
---   wait   nothing until AT (or a status change, if AT is nil)
+--   wait   nothing until AT
 --   look   call again with the receiver's pane.look
---   hold   the receiver can't take it (WHY); look again at AT or on a status change
+--   hold   the receiver can't take it (WHY); look again at AT
 --   attach copy the files into the receiver's inbox, then step again
---   put    paste TEXT, then press Enter
---   enter  press Enter again
+--   put    paste TEXT, press Enter, then step again
+--   enter  press Enter once more, then step again
 --   done   delivered: remove the message
 --   save   keep the message with its new state
 --   notice tell the sender TEXT, then keep the message
@@ -110,18 +100,34 @@ function M.step(msg, look, now)
       msg.k, msg.due = M.next_tick(msg, k, now)
       -- A tick that comes 1s or more late was missed; skip it.
       if late then return { kind = "save", at = msg.due } end
-      msg.d = { tag = msg.id .. "." .. k, started = now }
+      msg.d = { tag = msg.id .. "." .. k }
     else
       local due = msg.at or msg.posted
       if now < due then return { kind = "wait", at = due } end
-      msg.d = { tag = msg.id, started = now, note = msg.late and msg.late >= 1
+      msg.d = { tag = msg.id, note = msg.late and msg.late >= 1
         and (" [late by " .. msg.late .. "s, Rex restarted]") or nil }
     end
     d = msg.d
-  elseif msg.every and now >= msg.due then
-    -- The next tick came while this one was still on its way: skip it.
+  elseif msg.every and now - msg.due >= 1 then
+    -- The next tick is 1s late while this one is still on its way: skip it.
     msg.k, msg.due = M.next_tick(msg, msg.k, now)
   end
+
+  if d.pasted_at then
+    -- One look at a known CLI's prompt box, a moment after the paste. Our
+    -- text still in it means the Enter was lost: press it once more. Our
+    -- text is exactly what we pasted, give or take the blanks wrapping
+    -- adds, or the one stand-in a long paste becomes.
+    if d.known and not d.looked then
+      if now < d.pasted_at + M.enter_gap then return { kind = "wait", at = d.pasted_at + M.enter_gap } end
+      if not look then return { kind = "look" } end
+      d.looked = true
+      local c = look.composer
+      if c and (c.token or squash(c.text) == squash(d.text)) then return { kind = "enter" } end
+    end
+    return delivered(msg)
+  end
+
   if not look then return { kind = "look" } end
   if look.gone then
     return give_up(msg, "gone", "Message " .. msg.id .. " to " .. msg.to.name
@@ -131,49 +137,12 @@ function M.step(msg, look, now)
     return give_up(msg, "files", "Message " .. msg.id .. " to " .. msg.to.name .. " wasn't sent: " .. d.attach_error
       .. ". It's kept in " .. mail.file(msg.id) .. ".")
   end
-  -- Our paste is in the composer when it shows exactly our text, or just
-  -- the one stand-in a long paste becomes. Anything a person typed around
-  -- it makes it theirs.
-  local c = look.composer
-  local ours = c ~= nil and d.pasted_at ~= nil
-    and (c.ours == "token" or (c.ours == "id" and squash(c.text) == squash(d.text)))
-
-  if d.pasted_at then
-    -- Delivered when the receiver starts working, or when our text has
-    -- left its composer and its id is on the screen above it.
-    if d.worked or look.status == "working" or (c and not ours and look.seen) then
-      if not msg.every then return { kind = "done" } end
-      msg.d = nil
-      return { kind = "save", at = msg.due }
-    end
-    -- Nothing goes to a blocked receiver, not even an Enter.
-    if look.status == "blocked" then return hold(msg, d, look, M.why(look), now) end
-    if ours then
-      if now - d.last < M.enter_gap then return { kind = "wait", at = d.last + M.enter_gap } end
-      if (d.enters or 0) < M.enters then
-        d.enters, d.last, d.held_since, d.why = (d.enters or 0) + 1, now, nil, nil
-        return { kind = "enter" }
-      end
-      return give_up(msg, "unconfirmed", "Couldn't confirm message " .. msg.id .. " reached " .. msg.to.name
-        .. ": it's still in their prompt box after " .. M.enters .. " more Enters. It's kept in " .. mail.file(msg.id) .. ".")
-    end
-    local wait = M.resend[d.pastes] or M.resend[#M.resend]
-    if now - d.pasted_at < wait then return { kind = "wait", at = d.pasted_at + wait } end
-    if d.pastes > #M.resend then
-      return give_up(msg, "unconfirmed", "Couldn't confirm message " .. msg.id .. " reached " .. msg.to.name
-        .. " after " .. #M.resend .. " resends. It's kept in " .. mail.file(msg.id) .. ".")
-    end
-  end
-
-  -- Paste only when the receiver is ready. Otherwise hold, and tell the
-  -- sender once if it's held for long.
   local why = M.why(look)
-  if why then return hold(msg, d, look, why, now) end
+  if why then return hold(msg, d, why, now) end
   if msg.files and #msg.files > 0 and not d.attached then return { kind = "attach" } end
   d.held_since, d.why = nil, nil
-  local resent = d.pasted_at ~= nil
-  d.pastes, d.pasted_at, d.last, d.enters, d.worked = (d.pastes or 0) + 1, now, now, 0, nil
-  d.text = msg.head .. " · msg " .. d.tag .. (resent and " · resent" or "") .. msg.tail .. msg.text .. (d.note or "")
+  d.pasted_at, d.known = now, look.known
+  d.text = msg.head .. " · msg " .. d.tag .. msg.tail .. msg.text .. (d.note or "")
   return { kind = "put", text = d.text }
 end
 
@@ -364,8 +333,6 @@ function M.run()
         -- A one-shot already late when this postman starts was due while
         -- Rex, or this postman, was down.
         if msg.at and not msg.d and msg.at <= started - 1 then msg.late = started - msg.at end
-        -- pane.look attaches to the receiver's session, which also brings
-        -- its status events here.
         msgs[msg.id] = msg
         wake[msg.id] = 0
       end
@@ -395,21 +362,16 @@ function M.run()
   -- The time step sees. os.time() is whole seconds, and the postman's own
   -- work (slow looks, a timer rounded to the second) can make it late. So a
   -- recurring tick that came due while the postman was running is judged
-  -- at its due time, and while it's on its way, the next tick overtakes it
-  -- only once that one is 1s late. Every other message sees os.time().
+  -- at its due time. Everything else sees os.time().
   local function clock(msg)
     local now = os.time()
-    if not msg.every then return now end
-    if not msg.d then
-      if msg.due and msg.due <= now and msg.due >= awake then return msg.due end
-      return now
-    end
-    return math.max(msg.d.started, now - 1)
+    if msg.every and not msg.d and msg.due and msg.due <= now and msg.due >= awake then return msg.due end
+    return now
   end
 
   local function serve(msg)
     local look
-    for _ = 1, 6 do
+    for _ = 1, 8 do
       local fresh = not msg.d
       local a = M.step(msg, look, clock(msg))
       -- Time spent queued behind another message counts as held.
@@ -418,29 +380,24 @@ function M.run()
       end
       local now = os.time()
       if a.kind == "look" then
-        -- A pane Rex can't reach is held like a busy one, and its sender
-        -- hears about it after a while.
-        local ok, l = pcall(pane.look, msg.to, msg.d.tag)
+        -- A pane Rex can't reach is held, and its sender hears after a while.
+        local ok, l = pcall(pane.look, msg.to)
         look = ok and l or { error = tostring(l) }
-      elseif a.kind == "attach" then
-        local ok, err = pcall(pane.attach, msg.to, msg.files, msg.id)
-        if ok then msg.d.attached = true else msg.d.attach_error = tostring(err) end
+      elseif a.kind == "attach" or a.kind == "put" or a.kind == "enter" then
+        -- Record each step before it's taken, so a restart never pastes twice,
+        -- and stop if the sender deleted the file meanwhile.
+        if a.kind == "attach" then
+          local ok, err = pcall(pane.attach, msg.to, msg.files, msg.id)
+          if ok then msg.d.attached = true else msg.d.attach_error = tostring(err) end
+        end
         save(msg)
         if not msgs[msg.id] then return end
-        -- The receiver may have changed while the files were copied.
+        if a.kind == "put" then pane.put(msg.to, a.text) end
+        if a.kind ~= "attach" then pane.enter(msg.to) end
+        -- The receiver may have changed meanwhile.
         look = nil
       else
-        if a.kind == "put" then
-          save(msg) -- record the attempt before the paste, so a restart confirms rather than pastes again
-          if not msgs[msg.id] then return end
-          pane.put(msg.to, a.text)
-          pane.enter(msg.to)
-          wake[msg.id] = now + 1
-        elseif a.kind == "enter" then
-          save(msg)
-          pane.enter(msg.to)
-          wake[msg.id] = now + M.enter_gap
-        elseif a.kind == "done" then
+        if a.kind == "done" then
           mail.remove(msg.id)
           msgs[msg.id], wake[msg.id] = nil, nil
         elseif a.kind == "notice" then
@@ -455,9 +412,8 @@ function M.run()
             save(msg)
           end
           if msgs[msg.id] then
-            -- Another host sends no status events here, so check it shortly.
-            local at = math.min(a.at or math.huge, a.until_notice or math.huge, msg.to.host and now + M.poll or math.huge)
-            -- A tick on its way is overtaken once the next one is 1s late (see clock).
+            local at = a.at or math.huge
+            -- A tick on its way is overtaken once the next one is 1s late.
             if msg.every and msg.due and not msg.dead then at = math.min(at, msg.d and msg.due + 1 or msg.due) end
             wake[msg.id] = at
           end
@@ -528,26 +484,6 @@ function M.run()
     timer = rex.after(expected - os.time(), pass)
   end
 
-  -- A receiver's status changed: a paste that made it work is delivered,
-  -- and a receiver that stopped working may take what's held for it.
-  rex.on("terminal.program_status_changed", function(ctx, ev)
-    local record = ev.record or {}
-    if record.id then return end
-    local any = false
-    for id, msg in pairs(msgs) do
-      if not msg.to.host and msg.to.block == ev.block_id then
-        any = true
-        wake[id] = 0
-        if msg.d and msg.d.pasted_at and record.state == "working" then msg.d.worked = true end
-      end
-    end
-    if any then pass() end
-  end)
-  rex.on("block_closed", function(ctx, ev)
-    for id, msg in pairs(msgs) do
-      if not msg.to.host and msg.to.block == ev.block_id then wake[id] = 0 end
-    end
-  end)
   pass()
 end
 
