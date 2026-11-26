@@ -209,8 +209,8 @@ trial("a recurring alarm stores its interval exactly, and starts now", function(
   assert(msg.every == 10.5 and msg.start >= before and msg.start <= os.time() and msg.head == "[from Chief")
 end)
 trial("the shortest interval, 3 seconds, is taken", function()
-  mail.post({ to = "Helper", text = "tick", every = 10 })
-  assert(only().every == 10)
+  mail.post({ to = "Helper", text = "tick", every = 3 })
+  assert(only().every == 3)
 end)
 trial("hint=true asks the postman whether it's trusted", function()
   local _, _, hint = mail.post({ to = "Helper", text = "x", hint = true })
@@ -276,6 +276,29 @@ trial("list sets aside a file with any field of the wrong type, nested ones too"
     { function(m) m.d = { tag = "100-aaaa", pasted_at = "now" } end, "has a d.pasted_at that isn't a number" },
     { function(m) m.d = {} end, "has no d.tag" },
     { function(m) m.dead = true end, "has a dead that isn't a string" },
+    { function(m) m.seq = "0" end, "has a seq that isn't a number" },
+    { function(m) m.head = 1 end, "has a head that isn't a string" },
+    { function(m) m.tail = 1 end, "has a tail that isn't a string" },
+    { function(m) m.text = 1 end, "has a text that isn't a string" },
+    { function(m) m.at = "x" end, "has an at that isn't a number" },
+    { function(m) m.start = "x" end, "has a start that isn't a number" },
+    { function(m) m.k = "x" end, "has a k that isn't a number" },
+    { function(m) m.due = "x" end, "has a due that isn't a number" },
+    { function(m) m.late = "x" end, "has a late that isn't a number" },
+    { function(m) m.held_since = "x" end, "has a held_since that isn't a number" },
+    { function(m) m.notice = "x" end, "has a notice that isn't a boolean" },
+    { function(m) m.noticed = "x" end, "has a noticed that isn't a boolean" },
+    { function(m) m.d = { tag = "100-aaaa", known = "x" } end, "has a d.known that isn't a boolean" },
+    { function(m) m.d = { tag = "100-aaaa", looked = "x" } end, "has a d.looked that isn't a boolean" },
+    { function(m) m.d = { tag = "100-aaaa", text = 1 } end, "has a d.text that isn't a string" },
+    { function(m) m.d = { tag = "100-aaaa", note = 1 } end, "has a d.note that isn't a string" },
+    { function(m) m.d = { tag = "100-aaaa", attached = "x" } end, "has a d.attached that isn't a boolean" },
+    { function(m) m.d = { tag = "100-aaaa", attach_error = 1 } end, "has a d.attach_error that isn't a string" },
+    { function(m) m.d = { tag = "100-aaaa", why = {} } end, "has a d.why that isn't a string" },
+    { function(m) m.d = { tag = "100-aaaa", saved_why = 1 } end, "has a d.saved_why that isn't a string" },
+    { function(m) m.to.session = 1 end, "has a to.session that isn't a string" },
+    { function(m) m.to.name = 1 end, "has a to.name that isn't a string" },
+    { function(m) m.from.host = 1 end, "has a from.host that isn't a string" },
   }) do
     local m = full()
     row[1](m)

@@ -656,8 +656,8 @@ trial("the shortest interval loses no ticks; a shorter one is overtaken by its o
     end
     return gaps
   end
-  local gaps = skipped(mail.min_every)
-  assert(gaps == 0, "every=" .. mail.min_every .. ": " .. gaps .. " gaps")
+  local gaps = skipped(3)
+  assert(gaps == 0, "every=3: " .. gaps .. " gaps")
   assert(skipped(1.5) > 0, "every=1.5 lost nothing; the minimum could go lower")
 end)
 trial("a slow pass of other receivers never drops an alarm tick that nothing overtook", function()
