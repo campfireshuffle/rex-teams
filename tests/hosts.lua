@@ -2,7 +2,7 @@
 -- Mocks rex.call, rex.server, target.resolve and `hostname` to check
 -- send.lua and team.lua on this host and on another one.
 local real_dofile = dofile
-local servers, calls, pasted, printed, hostname
+local servers, calls, pasted, events, printed, hostname
 
 -- A mock Rex server: its sessions and blocks.
 local function server(name, host_id, sessions)
@@ -36,6 +36,7 @@ local function server(name, host_id, sessions)
       return { results = { { query = q, status = "ambiguous", candidates = found } } }
     end
     if method == "block.event" then
+      events[#events + 1] = { server = name, session = args.session_id, block = args.block_id, event = args.event }
       if args.event.type == "paste" then pasted[#pasted + 1] = { server = name, session = args.session_id, block = args.block_id, text = args.event.payload.text } end
       return {}
     end
@@ -45,7 +46,7 @@ local function server(name, host_id, sessions)
 end
 
 local function reset()
-  calls, pasted, printed = {}, {}, {}
+  calls, pasted, events, printed = {}, {}, {}, {}
   hostname = { ok = true, code = 0, stdout = "mac-host\r\n" }
   servers = {
     [""] = server("local", "id-mac", {
@@ -103,6 +104,21 @@ local function has(s, part) return s:find(part, 1, true) ~= nil end
 local function none_on(name)
   for _, c in ipairs(calls) do assert(not c:find("^" .. name .. " "), "unexpected call " .. c) end
 end
+-- Every block.event of one send: a paste, then an Enter press and release,
+-- all on the same server, session and block as the paste.
+local function sent_once(server_name, session, block)
+  assert(#events == 3, "want 3 block.event calls, got " .. #events)
+  local want = { { "paste" }, { "key", "press" }, { "key", "release" } }
+  for i, e in ipairs(events) do
+    assert(e.server == server_name and e.session == session and e.block == block,
+      "event " .. i .. " went to " .. e.server .. " " .. tostring(e.session) .. " " .. tostring(e.block))
+    assert(e.event.type == want[i][1], "event " .. i .. " is " .. e.event.type)
+    if want[i][2] then
+      local k = e.event.payload
+      assert(k.key == "enter" and k.text == "\r" and k.action == want[i][2], "event " .. i .. " isn't an Enter " .. want[i][2])
+    end
+  end
+end
 local function fails(script, args, text)
   local ok, err = run(script, args)
   assert(not ok and has(tostring(err), text), tostring(err))
@@ -120,6 +136,16 @@ check("a local send by full ID, short ID or label, with no session= anywhere", f
     assert(not has(p.text, "session=") and not has(p.text, "host="), p.text)
     none_on("ws")
   end
+end)
+check("a local send pastes and presses Enter in the same pane", function()
+  reset()
+  assert(run("send.lua", { block = "Helper", message = "hi" }))
+  sent_once("local", "session:me", "block:peer-00000-bbbbbb")
+end)
+check("a cross-host send pastes and presses Enter in the same pane on that host", function()
+  reset()
+  assert(run("send.lua", { host = "ws", block = "cccccc", message = "hi" }))
+  sent_once("ws", "session:far", "block:far-00000-cccccc")
 end)
 check("host= a label reaches that host", function()
   reset()
