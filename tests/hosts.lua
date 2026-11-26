@@ -327,5 +327,12 @@ check("team.lua counts every sender's messages, and says a sender was told only 
     .. "  (2 messages not delivered; their senders were told)\n"
     .. "  (1 message it sent itself not delivered)"), all)
   assert(not has(all, "its sender was told"), all)
+  local again = { id = "105-ffff", posted = 105, to = to, from = to, dead = "gone", head = "[alarm you set" }
+  mail.write(again)
+  entries[#entries + 1] = { name = again.id .. ".json" }
+  printed = {}
+  assert(run("team.lua", {}))
+  all = table.concat(printed, "\n")
+  assert(has(all, "  (2 messages it sent itself not delivered)"), all)
 end)
 print("Passed " .. count .. " host trials.")
