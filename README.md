@@ -51,20 +51,24 @@ Open agents in labeled tabs or panes, then talk to one:
 
 ### Keep alarms across Rex restarts
 
-Rex resumes an alarm after it restarts only if you trust alarm files. Add this line to Rex's `init.lua`, then run `rex config reload`:
+Rex resumes an alarm after it restarts only if you trust rex-teams' alarm script. Add this to Rex's `init.lua`, with the absolute path of the installed skill, then run `rex config reload`:
 
 ```lua
-rex.set("resume.trust.rex-teams-alarm", { command = { "rex", "do", rex.match.under("/tmp/rex-teams/alarms") } })
+rex.set("resume.trust.rex-teams-alarm", {
+  command = { "rex", "do", "<absolute path to the skill>/scripts/alarm.lua" },
+  flags = { ["--args"] = { "keep", values = 1 } },
+})
 ```
 
-A one-shot alarm that was due while Rex was down fires once when Rex is back, marked `[late by Ns, Rex restarted]`. A recurring alarm skips the ticks it missed. Until you add the rule, setting an alarm prints a reminder.
+An alarm's details are its `--args`, so the rule trusts that one script with any arguments. Until you add the rule, setting an alarm prints it with the real path. A one-shot alarm that was due while Rex was down fires once when Rex is back, marked `[late by Ns, Rex restarted]`. A recurring alarm skips the ticks it missed.
 
 ## Limitations
 
 - If you're typing in a pane when a message lands, the message mixes into your draft.
 - A pasted message is occasionally left unsubmitted ([#40](https://github.com/campfireshuffle/rex-teams/issues/40)).
 - A subagent that crashes before reporting wakes nobody.
-- Alarms come back after a Rex restart if you add the trust rule, but not after a reboot (`/tmp` is cleared).
+- Alarms come back after a Rex restart if you add the trust rule, whenever the server starts again with its saved sessions. On Windows, alarms don't come back after a Rex restart.
+- Alarms on macOS and Linux need `sha256sum` (macOS 15+ or coreutils).
 - Messages are one-way. A reply across hosts works only if the receiver's `rex hosts` can reach the sender's host.
 - `spawn.lua` starts subagents only on your own host. You can message agents on other hosts and send them files, but not start them there yet ([#37](https://github.com/campfireshuffle/rex-teams/issues/37)).
 - A Windows sender can't send files to another host yet.

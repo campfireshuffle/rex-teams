@@ -119,10 +119,13 @@ Keep the message to a short note to yourself, since you'll still have the conver
 
 Cancel with `rex block close -s "$REX_BLOCK" <alarm block ID>`; list alarms with `rex block ls -s "$REX_BLOCK"`.
 
-If the script prints that the alarm won't survive a Rex restart, tell the user once. The fix is one line in Rex's `init.lua`, followed by `rex config reload`:
+If the script prints that the alarm won't survive a Rex restart, tell the user once. The fix is a trust rule in Rex's `init.lua`, followed by `rex config reload`. The script prints it with the real path:
 
 ```lua
-rex.set("resume.trust.rex-teams-alarm", { command = { "rex", "do", rex.match.under("/tmp/rex-teams/alarms") } })
+rex.set("resume.trust.rex-teams-alarm", {
+  command = { "rex", "do", "<absolute path to the skill>/scripts/alarm.lua" },
+  flags = { ["--args"] = { "keep", values = 1 } },
+})
 ```
 
 Don't edit the user's Rex config yourself. With the rule, an alarm comes back after Rex restarts, and one that was due meanwhile arrives marked `[late by Ns, Rex restarted]`.

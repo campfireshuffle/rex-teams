@@ -1,16 +1,15 @@
 -- Run from the repo root with `lua5.1 tests/alarm.lua`.
--- Alarms are files that Rex can resume. rex.call, rex.after and os.time are
--- mocks. rex.exec runs the real command with a fixed OSC7577_TOKEN, except
--- the calls a test answers itself.
-local real_dofile, real_time, real_getenv = dofile, os.time, os.getenv
+-- An alarm is `rex do alarm.lua --args <json>`. rex.call, rex.exec, rex.after,
+-- rex.wait and os.time are mocks. The one real command is the worker's
+-- OSC 7577 shell, run with a fixed token.
+local real_dofile, real_time, real_getenv, real_print = dofile, os.time, os.getenv, print
 local script = "skills/rex-teams/scripts/alarm.lua"
 local TOKEN = "fixed-test-token-0123456789"
 
 local function sh_quote(s) return "'" .. tostring(s):gsub("'", "'\\''") .. "'" end
 local function run(argv, env)
-  local words = {}
-  for k, v in pairs(env) do words[#words + 1] = v and (k .. "=" .. sh_quote(v)) or ("-u " .. k) end
-  local line = "env " .. table.concat(words, " ")
+  local line = "env"
+  for k, v in pairs(env) do line = line .. " " .. k .. "=" .. sh_quote(v) end
   for _, a in ipairs(argv) do line = line .. " " .. sh_quote(a) end
   local out = os.tmpname()
   local status = os.execute(line .. " >" .. out .. " 2>&1")
@@ -22,71 +21,68 @@ local function run(argv, env)
   return { ok = ok, code = ok and 0 or 1, stdout = text, stderr = ok and "" or text }
 end
 
-local root = os.tmpname()
-os.remove(root)
-assert(os.execute("mkdir -p " .. sh_quote(root)) == 0 or true)
+-- JSON with sorted keys, like Rex's encoder. Each text maps back to its table.
+local encoded = {}
+local function encode(v)
+  if type(v) == "string" then return '"' .. v:gsub('[%c"\\]', function(c) return ("\\u%04x"):format(c:byte()) end) .. '"' end
+  if type(v) ~= "table" then return tostring(v) end
+  local keys = {}
+  for k in pairs(v) do keys[#keys + 1] = k end
+  table.sort(keys)
+  local parts = {}
+  for _, k in ipairs(keys) do parts[#parts + 1] = encode(k) .. ":" .. encode(v[k]) end
+  local text = "{" .. table.concat(parts, ",") .. "}"
+  encoded[text] = v
+  return text
+end
 
 local state
 local function reset()
   state = {
     now = 1795671000, env = { REX_BLOCK = "block:agent", OSC7577_TOKEN = TOKEN }, calls = {}, execs = {},
-    timers = {}, out = {}, printed = {}, stopped = nil, blocks = { ["block:agent"] = "session:s" },
-    config = { ok = true, json = "rule" }, uid = nil, fake_pid = "4242",
+    timers = {}, out = {}, printed = {}, waited = nil, stopped = nil, sha256sum = true,
+    blocks = { ["block:agent"] = "session:s" },
+    records = { { chosen = true, trusted = true, rule = "rex-teams-alarm" } }, event = nil,
   }
-  os.execute("rm -rf " .. sh_quote(root) .. " && mkdir -p " .. sh_quote(root))
 end
-
-local rules = {
-  rule = { resume_rules = {
-    { name = "claude", rule = { command = { "claude", "--resume", { match = "uuid" } } } },
-    { name = "rex-teams-alarm", rule = { command = { "rex", "do", { match = "under", dir = root } } } },
-  } },
-  norule = { resume_rules = {
-    { name = "claude", rule = { command = { "claude", "--resume", { match = "uuid" } } } },
-    { name = "other", rule = { command = { "rex", "do", { match = "under", dir = "/elsewhere" } } } },
-  } },
-}
 
 os.time = function(t) if t then return real_time(t) end return state.now end
 os.getenv = function(k) if state.env[k] ~= nil then return state.env[k] or nil end return real_getenv(k) end
 io.stdout = { write = function(self, ...) for _, s in ipairs({ ... }) do state.out[#state.out + 1] = s end return self end,
   flush = function() end }
-local real_print = print
 print = function(...) state.printed[#state.printed + 1] = table.concat({ ... }, "\t") end
 
 rex = {
   args = {},
-  json = { decode = function(s) return assert(rules[s], "unexpected json " .. s) end },
+  json = { encode = encode },
   call = function(method, args)
     state.calls[#state.calls + 1] = { method = method, args = args }
     if method == "target.resolve" then
       local s = state.blocks[args.queries[1]]
-      if s then return { results = { { status = "resolved", target = { session_id = s, block_id = args.queries[1] } } } } end
-      return { results = { { status = "not_found" } } }
+      return { results = { { status = "resolved", target = { session_id = s, block_id = args.queries[1] } } } }
     end
-    if method == "server.status" then return { host_id = "host-1" } end
     if method == "session.new_block" then state.blocks["block:alarm"] = args.session_id return { block_id = "block:alarm" } end
-    if method == "block.close" then state.blocks[args.block_id] = nil return {} end
+    if method == "com.superlogical.terminal.program_resume_records" then return { records = state.records } end
     return {}
   end,
   exec = function(argv, opts)
     state.execs[#state.execs + 1] = argv
     for _, a in ipairs(argv) do assert(not a:find(TOKEN, 1, true), "the token reached argv") end
-    if argv[1] == "rex" and argv[2] == "config" then
-      return { ok = state.config.ok, code = state.config.ok and 0 or 1, stdout = state.config.json, stderr = "init.lua:3: boom" }
-    end
-    if argv[1] == "sh" and argv[3] == "echo $PPID" then return { ok = true, code = 0, stdout = state.fake_pid .. "\n" } end
-    if argv[1] == "id" and state.uid then return { ok = true, code = 0, stdout = state.uid .. "\n" } end
-    local env = { OSC7577_TOKEN = state.env.OSC7577_TOKEN or false }
-    for k, v in pairs(opts and opts.env or {}) do env[k] = v end
-    return run(argv, env)
+    if argv[3] == "command -v sha256sum" then return { ok = state.sha256sum, code = state.sha256sum and 0 or 1, stdout = "", stderr = "" } end
+    assert(argv[1] == "sh" and argv[3]:find("sha256sum", 1, true), "unexpected command " .. table.concat(argv, " "))
+    return run(argv, { OSC7577_TOKEN = state.env.OSC7577_TOKEN })
+  end,
+  wait = function(event, filter, timeout)
+    state.waited = { event = event, timeout = timeout }
+    state.records = state.late_records or state.records
+    if state.event and filter(state.event) then return state.event end
+    return nil, "timeout"
   end,
   after = function(s, f) state.timers[#state.timers + 1] = { s = s, f = f } end,
   every = function() error("alarms schedule with rex.after from absolute times") end,
   stop = function(code) state.stopped = code end,
 }
 local lib = real_dofile("skills/rex-teams/scripts/lib.lua")
-lib.root = root
 dofile = function(path)
   if path:match("/lib%.lua$") then return lib end
   return real_dofile(path)
@@ -100,18 +96,22 @@ local function count(method)
   for _, c in ipairs(state.calls) do if c.method == method then n = n + 1 end end
   return n
 end
-local function ls(path) return run({ "ls", "-ldn", path }, {}).stdout end
-local function exists(path) local f = io.open(path) if f then f:close() end return f ~= nil end
-local function read(path) local f = assert(io.open(path)) local t = f:read("*a") f:close() return t end
-local function set(args) rex.args = args ALARM = nil real_dofile(script) end
-local function alarm_file() return assert(call("session.new_block"), "no alarm block").options.command[3] end
-local function worker(file) state.env.REX_BLOCK = "block:alarm" ALARM = nil real_dofile(file) end
+local function set(args) rex.args = args real_dofile(script) end
+local function command() return assert(call("session.new_block"), "no alarm block").options.command end
+local function worker()
+  local json = command()[5]
+  local args = assert(encoded[json], "unknown --args " .. tostring(json))
+  state.env.REX_BLOCK, state.calls, state.out, state.printed = "block:alarm", {}, {}, {}
+  set(args)
+  return json
+end
 
 local n, failed = 0, 0
 local function trial(name, f)
   n = n + 1
   reset()
   local ok, err = pcall(f)
+  lib.windows = false
   if not ok then failed = failed + 1 end
   real_print((ok and "ok " or "not ok ") .. n .. " - " .. name .. (ok and "" or ": " .. tostring(err)))
 end
@@ -121,159 +121,174 @@ local function fails(text, f)
   assert(tostring(err):find(text, 1, true), tostring(err))
 end
 
-trial("a new alarm is a private file that its block runs with rex do", function()
-  set({ ["in"] = 120, message = "Check CI" })
-  local file = alarm_file()
-  local opts = call("session.new_block")
-  assert(opts.session_id == "session:s")
-  assert(#opts.options.command == 3 and opts.options.command[1] == "rex" and opts.options.command[2] == "do")
-  assert(file:find(root .. "/alarms/host-1-", 1, true) == 1 and file:match("%.lua$"), file)
-  assert(ls(root .. "/alarms"):match("^drwx%-%-%-%-%-%-%S? "), ls(root .. "/alarms"))
-  assert(ls(file):match("^%-rw%-%-%-%-%-%-%-%S? "), ls(file))
-  local text = read(file)
-  assert(text:find('ALARM = { alarm_block = "block:alarm", session = "session:s", block = "block:agent", '
-    .. 'message = "[alarm you set] Check CI", file = "' .. file .. '", at = 1795671120 }', 1, true), text)
-  assert(text:find('return dofile("' .. lib.dir .. 'alarm.lua")', 1, true), text)
+trial("an alarm is rex do alarm.lua --args with its details", function()
+  set({ ["in"] = 120, message = 'Check "CI" — ünïcode' })
+  local c = command()
+  assert(#c == 5 and c[1] == "rex" and c[2] == "do" and c[3] == lib.dir .. "alarm.lua" and c[4] == "--args", table.concat(c, " "))
+  assert(c[5] == '{"at":1795671120,"block":"block:agent","message":"[alarm you set] Check \\u0022CI\\u0022 — ünïcode",'
+    .. '"session":"session:s","worker":true}', c[5])
+  assert(call("session.new_block").session_id == "session:s")
   assert(state.printed[1] == "alarm: block:alarm", tostring(state.printed[1]))
 end)
 
 trial("a recurring alarm stores its interval and start", function()
   set({ every = 60, message = "tick" })
-  assert(read(alarm_file()):find("every = 60, start = 1795671000 }", 1, true))
+  assert(command()[5] == '{"block":"block:agent","every":60,"message":"[alarm you set] tick","session":"session:s","start":1795671000,"worker":true}', command()[5])
 end)
 
-trial("an alarms folder that belongs to someone else stops the setter", function()
-  state.uid = "99999"
-  fails("belongs to someone else", function() set({ ["in"] = 5, message = "x" }) end)
-  assert(not call("session.new_block"))
+trial("a message with a newline is refused before anything exists", function()
+  fails("one line", function() set({ ["in"] = 5, message = "a\nb" }) end)
+  assert(#state.calls == 0)
 end)
 
-trial("the root may be the user's own link to a folder, but alarms must be a folder", function()
-  os.execute("rm -rf " .. sh_quote(root) .. " " .. sh_quote(root .. "-real") .. " && mkdir " .. sh_quote(root .. "-real")
-    .. " && ln -s " .. sh_quote(root .. "-real") .. " " .. sh_quote(root))
-  set({ ["in"] = 5, message = "x" })
-  assert(call("session.new_block"))
-  os.execute("rm -rf " .. sh_quote(root .. "-real/alarms") .. " && mkdir " .. sh_quote(root .. "-elsewhere")
-    .. " && ln -s " .. sh_quote(root .. "-elsewhere") .. " " .. sh_quote(root .. "-real/alarms"))
-  state.calls = {}
-  fails("isn't a folder", function() set({ ["in"] = 5, message = "x" }) end)
-  assert(not call("session.new_block"))
-  os.execute("rm -rf " .. sh_quote(root) .. " " .. sh_quote(root .. "-real") .. " " .. sh_quote(root .. "-elsewhere"))
+trial("fractional intervals are stored exactly", function()
+  set({ every = 0.5, message = "fast" })
+  assert(command()[5]:find('"every":0.5,', 1, true), command()[5])
+  worker()
+  assert(state.timers[1].s == 0.5, tostring(state.timers[1].s))
+  reset()
+  set({ ["in"] = 1.5, message = "soon" })
+  assert(command()[5]:find('"at":1795671001.5,', 1, true), command()[5])
+  worker()
+  assert(state.timers[1].s == 1.5, tostring(state.timers[1].s))
 end)
 
-trial("the worker reports how to restart itself with OSC 7577", function()
+trial("the worker reports its exact command with OSC 7577", function()
   set({ ["in"] = 120, message = "Check CI" })
-  local file = alarm_file()
-  state.out = {}
-  worker(file)
-  local function b64(s) return (run({ "sh", "-c", 'printf %s "$1" | base64', "sh", s }, {}).stdout:gsub("%s", "")) end
-  local body = "pid=4242:time=1795671000:argv=" .. b64("rex") .. "," .. b64("do") .. "," .. b64(file)
-  local mac = run({ "sh", "-c", 'printf %s "$1" | sha256sum | cut -c1-64', "sh", body .. ":" .. TOKEN }, {}).stdout:gsub("%s", "")
-  local want = "\27]7577;" .. body .. ":mac=" .. mac .. "\27\\"
-  assert(table.concat(state.out) == want, ("%q"):format(table.concat(state.out)))
+  local json = worker()
+  local out = table.concat(state.out)
+  local body, mac = out:match("^\27%]7577;(pid=%d+:time=1795671000:argv=[^:]+):mac=(%x+)\27\\$")
+  assert(body, ("%q"):format(out))
+  local want = run({ "sh", "-c", 'printf %s "$1" | sha256sum | cut -c1-64', "sh", body .. ":" .. TOKEN }, {}).stdout:gsub("%s", "")
+  assert(mac == want, "wrong mac")
+  local words = {}
+  for _, w in ipairs({ "rex", "do", lib.dir .. "alarm.lua", "--args", json }) do
+    words[#words + 1] = (run({ "sh", "-c", 'printf %s "$1" | base64 | tr -d "\\n"', "sh", w }, {}).stdout:gsub("%s", ""))
+  end
+  assert(body:match("argv=(.*)$") == table.concat(words, ","), body)
 end)
 
 trial("base64 pads one- and two-byte tails", function()
-  state.out = {}
-  ALARM = { session = "session:s", block = "block:agent", message = "m", file = "/a/bc", at = state.now + 5 }
-  real_dofile(script)
-  assert(table.concat(state.out):find("argv=cmV4,ZG8=,L2EvYmM=:", 1, true), table.concat(state.out))
+  local dir = lib.dir
+  lib.dir = "/ab/"
+  local ok, err = pcall(set, { worker = true, session = "s", block = "b", message = "m", at = state.now + 5 })
+  lib.dir = dir
+  assert(ok, err)
+  local want = "argv=cmV4,ZG8=,L2FiL2FsYXJtLmx1YQ==,LS1hcmdz,"
+  assert(table.concat(state.out):find(want, 1, true), table.concat(state.out))
 end)
 
 trial("a one-shot fires at its absolute time, not a fresh countdown", function()
   set({ ["in"] = 120, message = "Check CI" })
-  local file = alarm_file()
   state.now = state.now + 50
-  worker(file)
+  worker()
   assert(state.timers[1].s == 70, tostring(state.timers[1].s))
 end)
 
-trial("a one-shot fires once, then deletes its file and closes its block", function()
+trial("a one-shot fires once, clears its record and closes its block", function()
   set({ ["in"] = 120, message = "Check CI" })
-  local file = alarm_file()
-  worker(file)
+  worker()
   state.now, state.out = state.now + 120, {}
   state.timers[1].f()
   local paste = call("block.event")
   assert(paste.block_id == "block:agent" and paste.event.payload.text == "[alarm you set] Check CI", paste.event.payload.text)
   assert(count("block.event") == 3)
-  assert(table.concat(state.out):find("\27]7577;pid=4242:time=1795671120:clear=1:mac=", 1, true), table.concat(state.out))
-  assert(not exists(file), "file left behind")
+  assert(table.concat(state.out):match("^\27%]7577;pid=%d+:time=1795671120:clear=1:mac=%x+\27\\$"), table.concat(state.out))
   local close = call("block.close")
   assert(close and close.block_id == "block:alarm" and close.session_id == "session:s")
-  assert(state.stopped == 0)
-  assert(#state.timers == 1)
+  assert(state.stopped == 0 and #state.timers == 1)
 end)
 
-trial("a one-shot that wakes up late fires at once with a note", function()
+trial("a one-shot that starts late fires at once with a note", function()
   set({ ["in"] = 20, message = "Check CI" })
-  local file = alarm_file()
   state.now = state.now + 39
-  worker(file)
+  worker()
   assert(state.timers[1].s == 0)
   state.timers[1].f()
   assert(call("block.event").event.payload.text == "[alarm you set] Check CI [late by 19s, Rex restarted]",
     call("block.event").event.payload.text)
+  reset()
+  set({ ["in"] = 20, message = "Check CI" })
+  state.now = state.now + 20
+  worker()
+  state.timers[1].f()
+  assert(call("block.event").event.payload.text == "[alarm you set] Check CI", "on time is not late")
 end)
 
 trial("a recurring alarm keeps its phase and skips missed ticks", function()
   set({ every = 60, message = "tick" })
-  local file = alarm_file()
   state.now = state.now + 140 -- restarted after ticks at +60 and +120 passed
-  worker(file)
+  worker()
   assert(state.timers[1].s == 40, tostring(state.timers[1].s))
   state.now = state.now + 40
   state.timers[1].f()
   assert(count("block.event") == 3, "missed ticks must not fire")
   assert(call("block.event").event.payload.text == "[alarm you set] tick")
-  assert(state.timers[2].s == 60 and exists(file) and not call("block.close"))
+  assert(state.timers[2].s == 60 and not call("block.close"))
   state.now = state.now + 61 -- a timer that runs a second late keeps the phase
   state.timers[2].f()
   assert(state.timers[3].s == 59, tostring(state.timers[3].s))
 end)
 
-trial("the trust rule present: no hint", function()
+local function hint() return state.printed[2] or "" end
+local rule = 'rex.set("resume.trust.rex-teams-alarm", { command = { "rex", "do", "' .. lib.dir
+  .. 'alarm.lua" }, flags = { ["--args"] = { "keep", values = 1 } } })'
+
+trial("a trusted alarm prints no hint", function()
+  set({ ["in"] = 5, message = "x" })
+  local asked = call("com.superlogical.terminal.program_resume_records")
+  assert(asked.block_id == "block:alarm" and asked.session_id == "session:s")
+  assert(#state.printed == 1 and not state.waited, table.concat(state.printed, "\n"))
+end)
+
+trial("no rule: one hint line with the rule", function()
+  state.records = { { chosen = true, untrusted_reason = "no_rule" } }
+  set({ ["in"] = 5, message = "x" })
+  assert(#state.printed == 2 and hint():find("won't survive a Rex restart. ", 1, true), hint())
+  assert(hint():find(rule, 1, true), hint())
+end)
+
+trial("another reason is named in the hint", function()
+  state.records = { { chosen = true, untrusted_reason = "flags_differ" } }
+  set({ ["in"] = 5, message = "x" })
+  assert(hint():find("restart (flags_differ). ", 1, true) and hint():find(rule, 1, true), hint())
+end)
+
+trial("a record that arrives late is waited for, briefly", function()
+  state.records = {}
+  state.event = { block_id = "block:alarm", records = { { chosen = true, untrusted_reason = "no_rule" } } }
+  set({ ["in"] = 5, message = "x" })
+  assert(state.waited.event == "terminal.program_resume_changed" and state.waited.timeout <= 5)
+  assert(hint():find(rule, 1, true), hint())
+end)
+
+trial("a record that lands just before the wait is read again", function()
+  state.records, state.late_records = {}, { { chosen = true, trusted = true } }
+  state.event = { block_id = "block:other", records = { { chosen = true, untrusted_reason = "no_rule" } } }
   set({ ["in"] = 5, message = "x" })
   assert(#state.printed == 1, table.concat(state.printed, "\n"))
-  local checked
-  for _, argv in ipairs(state.execs) do
-    if table.concat(argv, " ") == "rex config check --json" then checked = true end
-  end
-  assert(checked, "the setter didn't run rex config check --json")
 end)
 
-trial("the trust rule absent: one hint line after the alarm line", function()
-  state.config.json = "norule"
+trial("no record at all says so", function()
+  state.records = {}
   set({ ["in"] = 5, message = "x" })
-  assert(#state.printed == 2 and state.printed[1] == "alarm: block:alarm", table.concat(state.printed, "\n"))
-  assert(state.printed[2]:find("won't survive a Rex restart", 1, true), state.printed[2])
-  assert(state.printed[2]:find('rex.set("resume.trust.rex-teams-alarm", { command = { "rex", "do", rex.match.under("'
-    .. root .. '/alarms") } })', 1, true), state.printed[2])
-  for _, argv in ipairs(state.execs) do assert(argv[3] ~= "reload", "the setter changed config") end
+  assert(hint():find("no resume record", 1, true), hint())
 end)
 
-trial("rex config check failing is an error, before any alarm exists", function()
-  state.config.ok = false
-  fails("init.lua:3: boom", function() set({ ["in"] = 5, message = "x" }) end)
-  assert(not call("session.new_block"))
+trial("a missing sha256sum stops the setter before anything exists", function()
+  state.sha256sum = false
+  fails("alarm.lua needs sha256sum (macOS 15+ or coreutils)", function() set({ ["in"] = 5, message = "x" }) end)
+  assert(#state.calls == 0)
 end)
 
-trial("setting an alarm removes files whose block is gone", function()
-  set({ ["in"] = 5, message = "old" })
-  local gone = alarm_file()
-  state.calls = {}
-  set({ ["in"] = 5, message = "live" })
-  local live = alarm_file()
-  local other = root .. "/alarms/host-2-abc.lua"
-  local f = assert(io.open(other, "w")) f:write('ALARM = { alarm_block = "block:elsewhere" }') f:close()
-  state.blocks["block:alarm"] = nil -- the user closed the first alarm (same mock ID, so re-add the live one)
-  state.blocks["block:alarm-live"] = "session:s"
-  f = assert(io.open(live, "w")) f:write((read(gone):gsub('"block:alarm"', '"block:alarm-live"'))) f:close()
-  state.calls = {}
-  set({ ["in"] = 5, message = "new" })
-  assert(not exists(gone), "a gone alarm's file stayed")
-  assert(exists(live), "a live alarm's file was removed")
-  assert(exists(other), "another Rex host's file was removed")
+trial("on Windows an alarm is plain: no report, no hint, no POSIX tools", function()
+  lib.windows = true
+  set({ ["in"] = 5, message = "x" })
+  assert(#state.printed == 1 and not call("com.superlogical.terminal.program_resume_records"))
+  worker()
+  state.timers[1].f()
+  assert(#state.execs == 0, "ran " .. table.concat(state.execs[1] or {}, " "))
+  assert(#state.out == 0 and call("block.event") and call("block.close"))
 end)
 
 print = real_print
