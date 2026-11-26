@@ -278,7 +278,7 @@ check("team.lua says how many messages wait for an agent, and why", function()
   os.execute("mkdir -p '" .. tmp .. "/outbox'")
   local to = { session = "session:me", block = "block:peer-00000-bbbbbb", name = "Helper" }
   local from = { session = "session:me", block = "block:me-000000-aaaaaa", name = "Chief" }
-  mail.write(full({ id = "100-aaaa", posted = 100, to = to, from = from, d = { why = "there's text in its prompt box" } }))
+  mail.write(full({ id = "100-aaaa", posted = 100, to = to, from = from, d = { tag = "100-aaaa", why = "there's text in its prompt box" } }))
   mail.write(full({ id = "101-bbbb", posted = 101, to = to, from = from }))
   mail.write(full({ id = "102-cccc", posted = 102, to = to, from = from, dead = "gone" }))
   mail.write(full({ id = "103-dddd", posted = 103, to = to, from = from, notice = true }))

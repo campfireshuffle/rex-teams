@@ -362,6 +362,23 @@ trial("a broken file is set aside once and named, and the rest still go", functi
   assert(said == 1, table.concat(S.printed, " | "))
   assert(io.open(file .. ".bad") and not io.open(file), "not set aside")
 end)
+trial("a file with a field of the wrong type is set aside once, and the rest still go", function()
+  local r = receiver("block:to")
+  queue({ id = "1795671000-good" })
+  local bad = queue({ id = "1795671000-badd", to = "block:other" })
+  bad.to = false
+  mail.write(bad)
+  start()
+  run_to(S.t + 10)
+  assert(#r.puts == 1, "valid message pasted " .. #r.puts .. " times; " .. table.concat(S.printed, " | "))
+  local file = root .. "/outbox/1795671000-badd.json"
+  local said = 0
+  for _, line in ipairs(S.printed) do
+    if line:find(file .. " has a to that isn't a table", 1, true) then said = said + 1 end
+  end
+  assert(said == 1, table.concat(S.printed, " | "))
+  assert(io.open(file .. ".bad") and not io.open(file), "not set aside")
+end)
 trial("serve follows the policy until it waits, however many steps that takes", function()
   local r = receiver("block:to")
   queue({})
@@ -564,7 +581,7 @@ trial("a recurring alarm skips the ticks it missed during a sleep", function()
   end
 end)
 trial("fractional recurring alarms fire on their phase, never early or twice", function()
-  -- mail.post takes 10 s and up; the postman keeps phase below that too.
+  -- mail.post takes 3 s and up; the postman keeps phase below that too.
   for _, every in ipairs({ 2.5, 3.3, 10.5 }) do
     reset()
     local me = receiver("block:me")
@@ -615,7 +632,80 @@ trial("a recurring tick is pasted while slow looks of other receivers delay it",
   end
   assert(#me.puts >= due - 1, #me.puts .. " of " .. due .. " ticks")
 end)
-trial("a recurring alarm held past its next tick sends the held tick once it clears, and skips the ones between", function()
+trial("the shortest interval loses no ticks; a shorter one is overtaken by its own look", function()
+  -- A tick is pasted, then looked at 2 s on. The receiver's own pane takes
+  -- half a second to read.
+  local function skipped(every)
+    reset()
+    local me = receiver("block:me")
+    alarm({ every = every })
+    local look = fake.look
+    fake.look = function(addr) S.t = S.t + 0.5 S.now = math.floor(S.t) return look(addr) end
+    local ok, err = pcall(function()
+      start()
+      while #me.puts < 30 do run_to(S.t + 0.1) end
+    end)
+    fake.look = look
+    assert(ok, err)
+    local last, gaps = 0, 0
+    for _, p in ipairs(me.puts) do
+      local tick = tonumber(p.text:match("%.(%d+)%]"))
+      assert(tick > last and p.t >= 1795671000 + tick * every, "tick " .. tick .. " twice or early")
+      if tick > last + 1 then gaps = gaps + 1 end
+      last = tick
+    end
+    return gaps
+  end
+  local gaps = skipped(mail.min_every)
+  assert(gaps == 0, "every=" .. mail.min_every .. ": " .. gaps .. " gaps")
+  assert(skipped(1.5) > 0, "every=1.5 lost nothing; the minimum could go lower")
+end)
+trial("a slow pass of other receivers never drops an alarm tick that nothing overtook", function()
+  -- Four held receivers whose panes take 3 s each to read, so each pass
+  -- takes longer than the alarm's interval.
+  local me = receiver("block:me")
+  for i = 1, 4 do
+    receiver("block:o" .. i, { draft = "typing" })
+    queue({ id = "1795671000-oo" .. string.char(96 + i) .. "a", to = "block:o" .. i })
+  end
+  alarm({ id = "1795671000-alrm", every = 10 })
+  local look, step = fake.look, P.step
+  fake.look = function(addr)
+    if addr.block ~= "block:me" then S.t = S.t + 3 S.now = math.floor(S.t) end
+    return look(addr)
+  end
+  -- Each time the postman turns to the alarm with no tick on its way, or
+  -- takes the look that finishes one, the last tick due then must go out:
+  -- only a later tick due too may take its place.
+  local turns = {}
+  P.step = function(msg, l, now, since)
+    if msg.every and not (msg.d and msg.d.pasted_at and not l) then turns[#turns + 1] = { t = S.t, k = math.floor((now - msg.start) / 10) } end
+    return step(msg, l, now, since)
+  end
+  local ok, err = pcall(function()
+    start()
+    for _ = 1, 600 do run_to(S.t + 0.1) end
+  end)
+  fake.look, P.step = look, step
+  assert(ok, err)
+  local pasted, last = {}, 0
+  for _, p in ipairs(me.puts) do
+    -- The held receivers' notices go to block:me too.
+    local tick = tonumber(p.text:match("msg 1795671000%-alrm%.(%d+)%]"))
+    if tick then
+      assert(tick > last, "tick " .. tick .. " after " .. last)
+      assert(p.t >= 1795671000 + 10 * tick, "tick " .. tick .. " early")
+      pasted[tick], last = true, tick
+    end
+  end
+  assert(last >= 10, "only up to tick " .. last)
+  for _, turn in ipairs(turns) do
+    if turn.k > 0 and turn.t < S.t - 30 then
+      assert(pasted[turn.k], ("tick %d was the last due at +%.1f, and never went out"):format(turn.k, turn.t - 1795671000))
+    end
+  end
+end)
+trial("a recurring alarm held past its next tick sends the last tick due once it clears", function()
   local me = receiver("block:me", { draft = "typing" })
   alarm({ every = 10 })
   start()
@@ -623,7 +713,7 @@ trial("a recurring alarm held past its next tick sends the held tick once it cle
   assert(#me.puts == 0, "pasted onto a draft")
   me.draft = nil
   run_to(S.t + 3)
-  assert(#me.puts == 1 and me.puts[1].text:find("msg 1795671000-abcd.1]", 1, true), me.puts[1] and me.puts[1].text)
+  assert(#me.puts == 1 and me.puts[1].text:find("msg 1795671000-abcd.3]", 1, true), me.puts[1] and me.puts[1].text)
   run_to(1795671045)
   assert(#me.puts == 2 and me.puts[2].t == 1795671040 and me.puts[2].text:find("msg 1795671000-abcd.4]", 1, true), me.puts[2] and me.puts[2].text)
 end)

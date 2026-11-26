@@ -20,13 +20,14 @@ M.enter_gap = 2 -- seconds after the paste, the one look at the prompt box
 M.held_notice = 600 -- a held message tells its sender once, after this long
 M.poll = 2 -- seconds between checks of the outbox and of held receivers
 
--- The tick of a recurring alarm due next, after tick K, at or after NOW.
--- Tick k falls at start + k*every. os.time() is whole seconds, so a tick
--- may be up to 1s late, never early. Ticks missed while Rex was down or the
--- machine slept are skipped.
-function M.next_tick(msg, k, now)
-  k = math.max(k + 1, math.floor((now - 1 - msg.start) / msg.every) + 1)
-  return k, msg.start + k * msg.every
+-- The last tick of a recurring alarm due at NOW, 0 before the first. Tick
+-- k falls at start + k*every. os.time() is whole seconds, so a tick may be
+-- up to 1s late, never early.
+function M.last_tick(msg, now)
+  local k = math.max(0, math.floor((now - msg.start) / msg.every))
+  if msg.start + (k + 1) * msg.every <= now then k = k + 1 end
+  if k > 0 and msg.start + k * msg.every > now then k = k - 1 end
+  return k
 end
 
 local function self_addressed(msg)
@@ -85,6 +86,25 @@ local function delivered(msg)
   return { kind = "save", at = msg.due }
 end
 
+-- A recurring alarm: take its last due tick, if that's new. A due tick goes
+-- out however late, unless a later one is due too: then the later one goes
+-- instead. A tick due before SINCE was missed, while the postman was down or
+-- the machine slept, and is skipped. The next tick stays at start + k*every.
+-- Returns an action when there's nothing to deliver now.
+local function tick(msg, now, since)
+  local k, missed = M.last_tick(msg, now), false
+  if k > (msg.k or 0) then
+    msg.k = k
+    missed = msg.start + k * msg.every < since
+    if missed then msg.d = nil else
+      msg.d = msg.d or {}
+      msg.d.tag = msg.id .. "." .. k
+    end
+  end
+  msg.due = msg.start + ((msg.k or 0) + 1) * msg.every
+  if not msg.d then return { kind = missed and "save" or "wait", at = msg.due } end
+end
+
 -- The delivery policy. STEP looks at one message and what its receiver's
 -- pane shows, updates the message's delivery state, and says what to do:
 --   wait   nothing until AT
@@ -96,31 +116,20 @@ end
 --   done   delivered: remove the message
 --   save   keep the message with its new state
 --   notice tell the sender TEXT, then keep the message
--- NOW is os.time(). LOOK is nil until step asks for it.
-function M.step(msg, look, now)
+-- NOW is os.time(). LOOK is nil until step asks for it. SINCE is when the
+-- postman last started or woke; see tick.
+function M.step(msg, look, now, since)
   if msg.dead then return { kind = "wait" } end
-  local d = msg.d
-  if not d then
-    if msg.every then
-      if not msg.k then msg.k, msg.due = M.next_tick(msg, 0, now) end
-      if now < msg.due then return { kind = "wait", at = msg.due } end
-      local k = msg.k
-      local late = now - msg.due >= 1
-      msg.k, msg.due = M.next_tick(msg, k, now)
-      -- A tick that comes 1s or more late was missed; skip it.
-      if late then return { kind = "save", at = msg.due } end
-      msg.d = { tag = msg.id .. "." .. k }
-    else
-      local due = msg.at or msg.posted
-      if now < due then return { kind = "wait", at = due } end
-      msg.d = { tag = msg.id, note = msg.late and msg.late >= 1
-        and (" [late by " .. msg.late .. "s, Rex restarted]") or nil }
-    end
-    d = msg.d
-  elseif msg.every and now - msg.due >= 1 then
-    -- The next tick is 1s late while this one is still on its way: skip it.
-    msg.k, msg.due = M.next_tick(msg, msg.k, now)
+  if msg.every and not (msg.d and msg.d.pasted_at) then
+    local a = tick(msg, now, since or -math.huge)
+    if a then return a end
+  elseif not msg.d then
+    local due = msg.at or msg.posted
+    if now < due then return { kind = "wait", at = due } end
+    msg.d = { tag = msg.id, note = msg.late and msg.late >= 1
+      and (" [late by " .. msg.late .. "s, Rex restarted]") or nil }
   end
+  local d = msg.d
 
   if d.pasted_at then
     -- One look at a known CLI's prompt box, a moment after the paste. Our
@@ -331,7 +340,9 @@ function M.run()
 
   -- The postman has run without a gap since AWAKE: a timer that fires late
   -- means the machine slept, or Rex stalled, from when it was due until now.
-  -- EXPECTED is when the next pass is due.
+  -- EXPECTED is when the next pass is due. A recurring tick due before
+  -- AWAKE is skipped: a slow pass is late too, but runs, so only the timer
+  -- tells a sleep from slow panes.
   local awake, expected = started, started
 
   local function load()
@@ -376,21 +387,11 @@ function M.run()
     if not mail.write(msg, true) then msgs[msg.id], wake[msg.id] = nil, nil end
   end
 
-  -- The time step sees. os.time() is whole seconds, and the postman's own
-  -- work (slow looks, a timer rounded to the second) can make it late. So a
-  -- recurring tick that came due while the postman was running is judged
-  -- at its due time. Everything else sees os.time().
-  local function clock(msg)
-    local now = os.time()
-    if msg.every and not msg.d and msg.due and msg.due <= now and msg.due >= awake then return msg.due end
-    return now
-  end
-
   -- Do what step says, until it says to wait.
   local function serve(msg)
     local look
     while true do
-      local a = M.step(msg, look, clock(msg))
+      local a = M.step(msg, look, os.time(), awake)
       local now = os.time()
       if a.kind == "look" then
         -- A pane Rex can't reach is held, and its sender hears after a while.
@@ -409,29 +410,27 @@ function M.run()
         if a.kind ~= "attach" then pane.enter(msg.to) end
         -- The receiver may have changed meanwhile.
         look = nil
-      else
-        if a.kind == "done" then
-          mail.remove(msg.id)
-          msgs[msg.id], wake[msg.id] = nil, nil
-        elseif a.kind == "notice" then
-          save(msg)
-          mail.notice(msg.from, a.text)
-          wake[msg.id] = msg.dead and math.huge or now + M.poll
-          load()
-        else
-          -- Record why it's held, for team.lua, when that changes.
-          if a.kind == "save" or (a.kind == "hold" and msg.d.saved_why ~= a.why) then
-            if a.kind == "hold" then msg.d.saved_why = a.why end
-            save(msg)
-          end
-          if msgs[msg.id] then
-            local at = a.at or math.huge
-            -- A tick on its way is overtaken once the next one is 1s late.
-            if msg.every and msg.due and not msg.dead then at = math.min(at, msg.d and msg.due + 1 or msg.due) end
-            wake[msg.id] = at
-          end
-        end
+      elseif a.kind == "done" then
+        mail.remove(msg.id)
+        msgs[msg.id], wake[msg.id] = nil, nil
         return
+      elseif a.kind == "notice" then
+        save(msg)
+        mail.notice(msg.from, a.text)
+        wake[msg.id] = msg.dead and math.huge or now + M.poll
+        load()
+        return
+      else
+        -- Record why it's held, for team.lua, when that changes.
+        if a.kind == "save" or (a.kind == "hold" and msg.d.saved_why ~= a.why) then
+          if a.kind == "hold" then msg.d.saved_why = a.why end
+          save(msg)
+        end
+        if not msgs[msg.id] then return end
+        wake[msg.id] = a.at or math.huge
+        -- A recurring alarm's next tick may be due already: it goes now.
+        if a.kind ~= "save" or not a.at or a.at > now then return end
+        look = nil
       end
     end
   end

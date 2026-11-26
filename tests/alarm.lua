@@ -143,11 +143,11 @@ trial("a bad interval is refused before anything exists", function()
     assert(not ok and #queued() == 0 and #S.calls == 0)
   end
 end)
-trial("an interval under 10 seconds is refused, saying so", function()
+trial("an interval under 3 seconds is refused, saying so", function()
   -- Delivery takes about 2 s, so shorter ticks would be lost.
-  for _, every in ipairs({ 0.3, 1.5, 9.9 }) do
+  for _, every in ipairs({ 0.3, 1.5, 2.9 }) do
     reset()
-    fails("every must be at least 10 seconds", function() set({ every = every, message = "fast" }) end)
+    fails("every must be at least 3 seconds", function() set({ every = every, message = "fast" }) end)
   end
 end)
 trial("a missing sha256sum stops the setter before anything exists", function()

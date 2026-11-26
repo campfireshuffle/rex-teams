@@ -172,9 +172,9 @@ for _, row in ipairs({
   { "a negative time", { to = "Helper", text = "hi", at = -5 }, "at must be a positive number" },
   { "both at and every", { to = "Helper", text = "hi", at = 5, every = 15 }, "use at or every, not both" },
   -- Delivery takes about 2 s; a shorter interval would lose ticks.
-  { "a 0.3-second interval", { to = "Helper", text = "hi", every = 0.3 }, "every must be at least 10 seconds" },
-  { "a 1.5-second interval", { to = "Helper", text = "hi", every = 1.5 }, "every must be at least 10 seconds" },
-  { "a 9.9-second interval", { to = "Helper", text = "hi", every = 9.9 }, "every must be at least 10 seconds" },
+  { "a 0.3-second interval", { to = "Helper", text = "hi", every = 0.3 }, "every must be at least 3 seconds" },
+  { "a 1.5-second interval", { to = "Helper", text = "hi", every = 1.5 }, "every must be at least 3 seconds" },
+  { "a 2.9-second interval", { to = "Helper", text = "hi", every = 2.9 }, "every must be at least 3 seconds" },
   { "two files with one name to another host", { to = "Builder", host = "ws", text = "hi", files = { "a.md", "x/a.md" } }, "two files are named a.md" },
 }) do
   trial("refused before anything is queued: " .. row[1], function() fails(row[3], row[2]) end)
@@ -208,7 +208,7 @@ trial("a recurring alarm stores its interval exactly, and starts now", function(
   local msg = only()
   assert(msg.every == 10.5 and msg.start >= before and msg.start <= os.time() and msg.head == "[from Chief")
 end)
-trial("the shortest interval, 10 seconds, is taken", function()
+trial("the shortest interval, 3 seconds, is taken", function()
   mail.post({ to = "Helper", text = "tick", every = 10 })
   assert(only().every == 10)
 end)
@@ -222,7 +222,8 @@ trial("list reads the queue oldest first, and filters by receiver", function()
   local here = mail.list
   os.execute("mkdir -p " .. quote(root .. "/outbox"))
   local function full(m)
-    m.seq, m.from, m.head, m.tail, m.text = 0, { block = "block:me" }, "[from Chief", "] ", "hi"
+    m.seq, m.from, m.head, m.tail, m.text = 0, { session = "s:1", block = "block:me", name = "Chief" }, "[from Chief", "] ", "hi"
+    m.to.session, m.to.name = "s:2", "Peer"
     return m
   end
   mail.write(full({ id = "200-bbbb", posted = 200, to = { block = "block:peer" } }))
@@ -248,6 +249,40 @@ trial("list reads the queue oldest first, and filters by receiver", function()
   table.sort(bad, function(a, b) return a.file < b.file end)
   assert(bad[1].file == root .. "/outbox/100-aaaa.json" and bad[1].why:find("isn't JSON", 1, true), bad[1].why)
   assert(bad[2].file == root .. "/outbox/200-bbbb.json" and bad[2].why == "has no seq", bad[2].why)
+end)
+trial("list sets aside a file with any field of the wrong type, nested ones too", function()
+  os.execute("mkdir -p " .. quote(root .. "/outbox"))
+  local function full()
+    return { id = "100-aaaa", posted = 100, seq = 0, head = "[from Chief", tail = "] ", text = "hi",
+      to = { session = "s:2", block = "block:peer", name = "Peer" }, from = { session = "s:1", block = "block:me", name = "Chief" } }
+  end
+  rex.call = function(method, args)
+    if method == "block.method" and args.method == "list_dir" then return { status = "ok", entries = { { name = "100-aaaa.json" } } } end
+    return servers[""].call(method, args)
+  end
+  mail.write(full())
+  local good, bad = mail.list()
+  assert(#good == 1 and #bad == 0, "a whole message is listed")
+  for _, row in ipairs({
+    { function(m) m.to = false end, "has a to that isn't a table" },
+    { function(m) m.to.block = 7 end, "has a to.block that isn't a string" },
+    { function(m) m.to.host = true end, "has a to.host that isn't a string" },
+    { function(m) m.from.block = nil end, "has no from.block" },
+    { function(m) m.from.name = {} end, "has a from.name that isn't a string" },
+    { function(m) m.posted = "100" end, "has a posted that isn't a number" },
+    { function(m) m.every = "60" end, "has an every that isn't a number" },
+    { function(m) m.every = 60 end, "has every but no start" },
+    { function(m) m.files = { "/a", 2 } end, "has a files[2] that isn't a string" },
+    { function(m) m.d = { tag = "100-aaaa", pasted_at = "now" } end, "has a d.pasted_at that isn't a number" },
+    { function(m) m.d = {} end, "has no d.tag" },
+    { function(m) m.dead = true end, "has a dead that isn't a string" },
+  }) do
+    local m = full()
+    row[1](m)
+    mail.write(m)
+    good, bad = mail.list()
+    assert(#good == 0 and #bad == 1 and bad[1].why == row[2], row[2] .. ": " .. tostring(bad[1] and bad[1].why))
+  end
 end)
 trial("a broken file in the outbox doesn't stop a send", function()
   os.execute("mkdir -p " .. quote(root .. "/outbox"))

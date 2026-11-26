@@ -22,9 +22,10 @@ local dir = debug.getinfo(1, "S").source:gsub("^@", ""):match("^(.*[/\\])")
 local lib = dofile(dir .. "lib.lua")
 local mail = {}
 
--- The shortest interval: delivering a message takes about 2 s (the paste,
--- then one look at the prompt box), so a shorter one would lose ticks.
-mail.min_every = 10
+-- The shortest interval: a tick is pasted, then looked at 2 s on, and a
+-- tick due by then overtakes the one after it. 3 s leaves room for a slow
+-- pane; see tests/postman.lua.
+mail.min_every = 3
 
 function mail.dir() return lib.path("outbox") end
 function mail.file(id) return lib.path("outbox", id .. ".json") end
@@ -72,16 +73,45 @@ function mail.before(a, b)
   return a.id < b.id
 end
 
--- The fields every queued message has.
-local required = { "id", "posted", "seq", "to", "from", "head", "tail", "text" }
+-- What the postman, team.lua and alarm.lua read in a queued message: each
+-- field's type, with "?" where it may be absent. A table is a nested
+-- field, absent where it has "?"; its [1] is the type of a list's items.
+local address = { block = "string", session = "string", name = "string", host = "string?" }
+local shape = {
+  id = "string", posted = "number", seq = "number", head = "string", tail = "string", text = "string",
+  to = address, from = address, at = "number?", every = "number?", start = "number?",
+  k = "number?", due = "number?", late = "number?", held_since = "number?",
+  notice = "boolean?", noticed = "boolean?", dead = "string?", files = { "string", ["?"] = true },
+  d = { ["?"] = true, tag = "string", pasted_at = "number?", known = "boolean?", looked = "boolean?", text = "string?",
+    note = "string?", attached = "boolean?", attach_error = "string?", why = "string?", saved_why = "string?" },
+}
+
+-- Why VALUE, the field NAME, doesn't fit WANT from shape, or nil if it does.
+local function misfit(value, want, name)
+  local optional = type(want) == "table" and want["?"] or type(want) == "string" and want:sub(-1) == "?"
+  if value == nil then return not optional and "has no " .. name or nil end
+  local kind = type(want) == "table" and "table" or want:gsub("%?$", "")
+  if type(value) ~= kind then return "has " .. (name:find("^[aeiou]") and "an " or "a ") .. name .. " that isn't a " .. kind end
+  if kind ~= "table" then return nil end
+  for k, w in pairs(want) do
+    local why = k ~= "?" and k ~= 1 and misfit(value[k], w, name .. "." .. k)
+    if why then return why end
+  end
+  for i, v in ipairs(want[1] and value or {}) do
+    local why = misfit(v, want[1], name .. "[" .. i .. "]")
+    if why then return why end
+  end
+end
 
 -- The message in a queued file's TEXT, or nil and why it isn't one.
 local function parse(text)
   local ok, msg = pcall(rex.json.decode, text)
   if not ok or type(msg) ~= "table" then return nil, "isn't JSON" .. (ok and "" or " (" .. tostring(msg) .. ")") end
-  for _, k in ipairs(required) do
-    if msg[k] == nil then return nil, "has no " .. k end
+  for k, want in pairs(shape) do
+    local why = misfit(msg[k], want, k)
+    if why then return nil, why end
   end
+  if msg.every and not msg.start then return nil, "has every but no start" end
   return msg
 end
 
