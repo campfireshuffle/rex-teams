@@ -59,6 +59,14 @@ local function ids()
   return out
 end
 
+-- Whether A was posted before B. POSTED is whole seconds, so SEQ orders
+-- the messages to one receiver posted in the same second.
+function mail.before(a, b)
+  if a.posted ~= b.posted then return a.posted < b.posted end
+  if (a.seq or 0) ~= (b.seq or 0) then return (a.seq or 0) < (b.seq or 0) end
+  return a.id < b.id
+end
+
 -- The queue, oldest first. FILTER may name { block, host } to list only the
 -- messages to one receiver.
 function mail.list(filter)
@@ -69,8 +77,18 @@ function mail.list(filter)
     if f then f:close() end
     if msg and (not filter or (msg.to.block == filter.block and msg.to.host == filter.host)) then out[#out + 1] = msg end
   end
-  table.sort(out, function(a, b) if a.posted ~= b.posted then return a.posted < b.posted end return a.id < b.id end)
+  table.sort(out, mail.before)
   return out
+end
+
+-- The SEQ for a message to TO posted at NOW: after every queued message
+-- to TO posted in the same second.
+local function seq(to, now)
+  local n = 0
+  for _, msg in ipairs(mail.list({ block = to.block, host = to.host })) do
+    if msg.posted == now then n = math.max(n, (msg.seq or 0) + 1) end
+  end
+  return n
 end
 
 -- Queue MSG, then wake the postman.
@@ -83,8 +101,8 @@ end
 -- A note from the postman to FROM, the sender of a message it's handling.
 -- A notice never causes a notice of its own.
 function mail.notice(from, text)
-  local id = lib.id()
-  mail.write({ id = id, posted = os.time(), notice = true, to = from, from = from,
+  local id, now = lib.id(), os.time()
+  mail.write({ id = id, posted = now, seq = seq(from, now), notice = true, to = from, from = from,
     head = "[rex-teams postman", tail = "] ", text = text })
   return id
 end
@@ -137,7 +155,7 @@ function mail.post(o)
   end
   local now = os.time()
   local hint = queue({
-    id = id, posted = now,
+    id = id, posted = now, seq = seq({ block = block, host = host }, now),
     to = { host = host, session = session, block = block, name = name },
     from = { session = from_session, block = from_block, name = from_name },
     head = head, tail = tail, text = text,

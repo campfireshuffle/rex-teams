@@ -89,11 +89,12 @@ local function reset()
   }
 end
 
-local lib
+local lib, next_ids
 local function load()
   lib = real_dofile("skills/rex-teams/scripts/lib.lua")
   lib.root = tmp
   lib.me = function() return "session:me", "block:me-000000-aaaaaa" end
+  if next_ids then lib.id = function() return table.remove(next_ids, 1) end end
   lib.worktree = function() end
   dofile = function(path)
     if path:match("/lib%.lua$") then return lib end
@@ -289,5 +290,29 @@ check("team.lua says how many messages wait for an agent, and why", function()
   local all = table.concat(printed, "\n")
   assert(has(all, "block='block:peer-00000-bbbbbb' message='<message>'\n  (2 messages waiting: someone is typing there)\n"
     .. "  (1 message not delivered; its sender was told)"), all)
+end)
+check("two sends in one second are listed, and so delivered, in the order they were sent", function()
+  reset()
+  local plain = servers[""].call
+  rex.call = function(method, args)
+    if method == "block.method" and args.method == "list_dir" then
+      local entries = {}
+      local p = io.popen("ls '" .. args.args.path .. "' 2>/dev/null")
+      for name in p:lines() do entries[#entries + 1] = { name = name } end
+      p:close()
+      return { status = "ok", entries = entries }
+    end
+    return plain(method, args)
+  end
+  local time = os.time
+  os.time = function(t) if t then return time(t) end return 1795671000 end
+  next_ids = { "1795671000-zzzz", "1795671000-aaaa" }
+  local ok, err = run("send.lua", { block = "Helper", message = "first" })
+  local ok2, err2 = run("send.lua", { block = "Helper", message = "second" })
+  load()
+  local list = real_dofile(lib.dir .. "mail.lua").list()
+  os.time, next_ids, dofile = time, nil, real_dofile
+  assert(ok and ok2, tostring(err) .. " " .. tostring(err2))
+  assert(#list == 2 and list[1].text == "first" and list[2].text == "second", list[1] and list[1].text)
 end)
 print("Passed " .. count .. " host trials.")
