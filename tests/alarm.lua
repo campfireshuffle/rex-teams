@@ -63,6 +63,7 @@ rex = {
     end
     if method == "session.new_block" then state.blocks["block:alarm"] = args.session_id return { block_id = "block:alarm" } end
     if method == "com.superlogical.terminal.program_resume_records" then return { records = state.records } end
+    if method == "block.method" and args.method == "format" then return { content = state.screen or "" } end
     return {}
   end,
   exec = function(argv, opts)
@@ -107,10 +108,12 @@ local function worker()
 end
 
 local n, failed = 0, 0
+local mocks = { after = rex.after, call = rex.call }
 local function trial(name, f)
   n = n + 1
   reset()
   local ok, err = pcall(f)
+  rex.after, rex.call = mocks.after, mocks.call
   lib.windows = false
   if not ok then failed = failed + 1 end
   real_print((ok and "ok " or "not ok ") .. n .. " - " .. name .. (ok and "" or ": " .. tostring(err)))
@@ -228,6 +231,89 @@ trial("a recurring alarm keeps its phase and skips missed ticks", function()
   state.now = state.now + 61 -- a timer that runs a second late keeps the phase
   state.timers[2].f()
   assert(state.timers[3].s == 59, tostring(state.timers[3].s))
+end)
+
+-- Rex's clock is whole seconds, but its timers run on real time. Run the
+-- alarm's timers on a real clock T, with os.time() = floor(T).
+local function run_real(start, f)
+  local t, queue, fired = start, {}, {}
+  state.now = math.floor(t)
+  rex.after = function(s, g) queue[#queue + 1] = { due = t + s, f = g } end
+  local paste = rex.call
+  rex.call = function(method, args)
+    if method == "block.event" and args.event.type == "paste" then fired[#fired + 1] = { t = t, text = args.event.payload.text } end
+    return paste(method, args)
+  end
+  f()
+  local function step()
+    table.sort(queue, function(x, y) return x.due < y.due end)
+    local next = table.remove(queue, 1)
+    if not next then return false end
+    t = next.due
+    state.now = math.floor(t)
+    next.f()
+    return true
+  end
+  return fired, step
+end
+local function at_real(t) state.now = math.floor(t) end
+
+trial("fractional recurring alarms fire on their phase, never early or twice", function()
+  for _, every in ipairs({ 0.3, 1.5, 2.5 }) do
+    reset()
+    at_real(1795671000.7)
+    set({ every = every, message = "tick" })
+    local start = 1795671000
+    local fired, step = run_real(1795671000.9, worker)
+    while #fired < 12 and step() do end
+    assert(#fired == 12, every .. ": " .. #fired .. " ticks")
+    for k, f in ipairs(fired) do
+      local due = start + k * every
+      assert(f.t >= due - 1e-9 and f.t < due + 1, ("every=%s tick %d at +%.2f, due +%.2f"):format(every, k, f.t - start, due - start))
+    end
+  end
+end)
+
+trial("a one-shot claims a restart only when it starts at least 1s late", function()
+  -- in<1, with the worker starting just past a second boundary
+  at_real(1795671000.95)
+  set({ ["in"] = 0.5, message = "soon" })
+  local fired, step = run_real(1795671001.05, worker)
+  while step() do end
+  assert(fired[1].text == "[alarm you set] soon", fired[1].text)
+  -- a slow worker that starts just past a second boundary
+  reset()
+  at_real(1795671000.2)
+  set({ ["in"] = 1.5, message = "soon" })
+  fired, step = run_real(1795671002.05, worker)
+  while step() do end
+  assert(fired[1].text == "[alarm you set] soon", fired[1].text)
+end)
+
+trial("a one-shot never fires before its time", function()
+  for _, wait in ipairs({ 5, 1.5, 0.5 }) do
+    reset()
+    at_real(1795671000.95)
+    set({ ["in"] = wait, message = "x" })
+    local at = 1795671000 + wait
+    local fired, step = run_real(1795671001.05, worker)
+    while step() do end
+    assert(#fired == 1 and fired[1].t >= at, ("in=%s fired at +%.2f, due +%.2f"):format(wait, fired[1].t - 1795671000, wait))
+  end
+end)
+
+trial("without OSC7577_TOKEN the worker stops and the setter says why", function()
+  set({ ["in"] = 5, message = "x" })
+  state.env.OSC7577_TOKEN = false
+  fails("OSC7577_TOKEN isn't set", worker)
+  assert(#state.timers == 0 and #state.out == 0, "the alarm armed without a report")
+  reset()
+  state.records = {}
+  state.screen = "\nalarm worker failed: OSC7577_TOKEN isn't set, so Rex can't resume this alarm\n"
+  set({ ["in"] = 5, message = "x" })
+  assert(call("session.new_block").options.exit.on_completion == false, "a failed worker's block must stay")
+  assert(call("block.method").args.unwrap, "read the screen unwrapped")
+  assert(state.printed[2] == "alarm: alarm worker failed: OSC7577_TOKEN isn't set, so Rex can't resume this alarm", tostring(state.printed[2]))
 end)
 
 local function hint() return state.printed[2] or "" end

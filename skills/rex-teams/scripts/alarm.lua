@@ -25,11 +25,14 @@ end
 -- The owner is this `rex do`, the shell's parent. The token stays in the
 -- shell's environment, never on a command line.
 local function report(fields)
-  if lib.windows or not os.getenv("OSC7577_TOKEN") then return end
+  if lib.windows then return end
+  if not os.getenv("OSC7577_TOKEN") then error("alarm worker failed: OSC7577_TOKEN isn't set, so Rex can't resume this alarm", 0) end
   local r = assert(rex.exec({ "sh", "-c", 'body="pid=$PPID:time=$1:$2"; printf "%s:mac=" "$body"; '
     .. 'printf "%s:%s" "$body" "$OSC7577_TOKEN" | sha256sum | cut -c1-64', "sh", tostring(os.time()), fields }))
   local body = r.ok and r.stdout:match("^(pid=%d+:.*:mac=%x+)%s*$")
-  assert(body and #body:match("mac=(%x+)$") == 64, "the OSC 7577 report failed: " .. tostring(r.stderr ~= "" and r.stderr or r.stdout))
+  if not (body and #body:match("mac=(%x+)$") == 64) then
+    error("alarm worker failed: the OSC 7577 report failed: " .. tostring(r.stderr ~= "" and r.stderr or r.stdout), 0)
+  end
   io.stdout:write("\27]7577;", body, "\27\\")
   io.stdout:flush()
 end
@@ -43,11 +46,12 @@ if a.worker then
     lib.paste_line(a.session, a.block, a.message .. note)
   end
   if a.at then
-    -- Started after its time means Rex was down when it was due.
+    -- os.time() is whole seconds behind the real time, so this never fires
+    -- early. Starting a second or more after its time means Rex was down.
     local late = os.time() - a.at
     print("alarm: due at " .. os.date("%H:%M:%S", a.at))
     rex.after(math.max(0, -late), function()
-      fire(late > 0 and (" [late by " .. late .. "s, Rex restarted]") or "")
+      fire(late >= 1 and (" [late by " .. late .. "s, Rex restarted]") or "")
       report("clear=1")
       -- Rex resumes the worker under a shell, which would stay in the pane.
       local session, block = lib.me()
@@ -55,9 +59,14 @@ if a.worker then
       rex.stop(0)
     end)
   else
-    -- Ticks fall at start + k*every. Ticks missed while Rex was down are skipped.
+    -- Tick k falls at start + k*every. Ticks missed while Rex was down are
+    -- skipped. os.time() is whole seconds, so count ticks rather than work
+    -- the next one out from the clock: a tick may be up to 1s late, never
+    -- early or twice.
+    local k = math.floor((os.time() - a.start) / a.every) + 1
     local function next_tick()
-      local wait = a.every - (os.time() - a.start) % a.every
+      local wait = math.max(0, a.start + k * a.every - os.time())
+      k = k + 1
       print("alarm: next at " .. os.date("%H:%M:%S", os.time() + wait))
       rex.after(wait, function() fire("") next_tick() end)
     end
@@ -88,7 +97,9 @@ local alarm = lib.call("session.new_block", {
   session_id = session,
   label = "alarm: " .. message:sub(1, 40),
   flavor = "com.superlogical.terminal.shell",
-  options = { command = { "rex", "do", script, "--args", rex.json.encode(args) } },
+  -- A worker that stops leaves its block, and its error, in place. A
+  -- one-shot closes its own block once it has fired.
+  options = { command = { "rex", "do", script, "--args", rex.json.encode(args) }, exit = { on_completion = false } },
 }).block_id
 print("alarm: " .. alarm)
 if lib.windows then return end
@@ -106,7 +117,9 @@ if not record then
   record = chosen(ev and ev.records) or chosen(records())
 end
 if not record then
-  print("alarm: Rex has no resume record for this alarm after 5s. Check with: rex block call -b " .. alarm .. " program_resume_records")
+  local screen = lib.call("block.method", { session_id = session, block_id = alarm, method = "format", args = { format = "text", unwrap = true } }).content
+  local failed = screen:match("alarm worker failed: [^\r\n]*")
+  print("alarm: " .. (failed or "Rex has no resume record for this alarm after 5s. Check with: rex block call -b " .. alarm .. " program_resume_records"))
 elseif not record.trusted then
   print("alarm: this alarm won't survive a Rex restart"
     .. (record.untrusted_reason == "no_rule" and "" or " (" .. tostring(record.untrusted_reason) .. ")")

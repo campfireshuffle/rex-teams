@@ -128,7 +128,9 @@ rex.set("resume.trust.rex-teams-alarm", {
 })
 ```
 
-Don't edit the user's Rex config yourself. With the rule, an alarm comes back after Rex restarts, and one that was due meanwhile arrives marked `[late by Ns, Rex restarted]`.
+Don't edit the user's Rex config yourself. With the rule, an alarm comes back after Rex restarts. A one-shot that was due meanwhile arrives marked `[late by Ns, Rex restarted]`; a recurring alarm skips the ticks it missed.
+
+If the script prints that Rex has no resume record for the alarm, check the alarm's record with the command it prints, and tell the user what it shows.
 
 ## Rules
 
