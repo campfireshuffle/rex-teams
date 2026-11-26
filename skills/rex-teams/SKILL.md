@@ -1,11 +1,11 @@
 ---
 name: rex-teams
-description: Work with other agents inside Rex. Start Claude, Codex, Pi, or other agent CLIs as subagents in background tabs, message them mid-task, and get woken when they report back. Also message teammates, the long-running agents a user has set up in labeled Rex tabs or panes (a PM, an engineer, a chief of staff). Use when the user asks you to delegate work, run tasks in parallel, get a second opinion from another agent, talk to a teammate, or set a one-time or recurring alarm, such as a reminder, a check back in N minutes, or a task to repeat every N minutes.
+description: Work with other agents inside Rex. Start Claude, Codex, Pi, or other agent CLIs as subagents in background tabs or panes, message them mid-task, and get woken when they report back. Also message teammates, the long-running agents a user has set up in labeled Rex tabs or panes (a PM, an engineer, a chief of staff). Use when the user asks you to delegate work, run tasks in parallel, get a second opinion from another agent, talk to a teammate, or set a one-time or recurring alarm, such as a reminder, a check back in N minutes, or a task to repeat every N minutes.
 ---
 
 # Rex teams
 
-- **Subagents** are agents you start for a task, in `↳` tabs next to yours. They report back, and you close them.
+- **Subagents** are agents you start for a task, in `↳` tabs or panes next to yours. They report back, and you close them.
 - **Teammates** are agents the user set up, in the other labeled tabs and panes of your session. They stay open.
 
 The scripts are Lua files that Rex runs with `rex do`, so they work wherever Rex does. Arguments are `key=value` pairs. Messages go through `send.lua`. It types one line into the other agent's terminal, which starts that agent's next turn, so nobody polls. Messages to other agents start with a header naming the sender and the exact command for replying.
@@ -24,6 +24,8 @@ The scripts are Lua files that Rex runs with `rex do`, so they work wherever Rex
    `command` is whatever starts the agent, split on spaces. Put `{prompt}` where the CLI takes its first prompt, for example `command="<agent> -i {prompt}"`. Without `{prompt}`, the prompt goes last.
 
    It opens a background tab labeled `↳ <name>` next to yours, adds rules for reporting back, and prints the task folder and a ready-made `send.lua` command. Nested subagents keep a single `↳`, indented four more spaces per generation. An invisible zero-width marker preserves leading spaces in Rex.
+
+   When the user asks for a pane or split, add `split=right` (or `left`, `above`, `below`). The subagent then opens in a pane on that side of yours, labeled the same way.
 
    A linked Git worktree adds ` (w)` to the tab label. The branch and path appear in the launch output and `team.lua`, not the tab. The marker reflects the checkout at launch, not exclusive ownership. Git inspection runs on the machine running the scripts; use them on the same host as the checkout.
 
@@ -49,7 +51,7 @@ Start all independent subagents in one go. As each report arrives, handle it and
 
 ### When a report arrives
 
-It points to `result.md`, whose first line is `STATUS: completed`, `failed`, or `blocked`, and to `<task folder>/close.md`, which holds the command to close the subagent's tab.
+It points to `result.md`, whose first line is `STATUS: completed`, `failed`, or `blocked`, and to `<task folder>/close.md`, which holds the command to close the subagent's tab or pane.
 
 - `completed`: check the claims that matter, then close the tab, unless you expect a follow-up soon.
 - `blocked`: answer with the reply command from the header, or ask the user.
@@ -75,7 +77,7 @@ Use the retained worktree as `cwd` when resuming work that needs its changes. Th
 
 ## Teammates
 
-Your teammates are the other labeled tabs and panes in your session, except tabs prefixed with a possibly indented `↳`, which are subagents. The user may also tell you about teammates elsewhere.
+Your teammates are the other labeled tabs and panes in your session, except tabs and panes prefixed with a possibly indented `↳`, which are subagents. The user may also tell you about teammates elsewhere.
 
 List your team, then message a teammate by running the command printed next to its name, with your message in place of `<message>`. The command targets the teammate's block ID, because labels can change or repeat and IDs don't.
 

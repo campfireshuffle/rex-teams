@@ -20,11 +20,15 @@ lib.path = function(...)
   local parts = {...}
   return root .. "-" .. parts[#parts]
 end
-local launches, prompt_closed, close_path = 0, false
+local launches, prompt_closed, close_path, split_args = 0, false
 rex.call = function(method, args)
   if method == "session.attach" then return {} end
   if method == "session.view" then return { windows = {} } end
   if method == "block.method" then return { status = "ok", path = "/checkout" } end
+  if method == "session.new_split" then
+    launches, split_args = launches + 1, args
+    return { block_ids = { "block:child" } }
+  end
   if method == "session.new_window" then
     launches = launches + 1
     local kickoff = args.layout.options.command[2]
@@ -50,7 +54,7 @@ dofile = function(path)
   if path:match("/lib%.lua$") then return lib end
   return real_dofile(path)
 end
-local function run(failure)
+local function run(failure, extra)
   os.remove(root .. "-prompt.md")
   prompt_closed = false
   io.open = function(path, mode)
@@ -76,6 +80,7 @@ local function run(failure)
     }
   end
   rex.args = { name = "test", cwd = "/checkout", task = "task.md", command = "mock-agent {prompt}" }
+  for k, v in pairs(extra or {}) do rex.args[k] = v end
   local saved_print = print
   print = function() end
   local ok, err = pcall(real_dofile, "skills/rex-teams/scripts/spawn.lua")
@@ -101,7 +106,20 @@ assert(not succeeded and tostring(message):find("injected close.md failure", 1, 
 local depth = assert(real_open(root .. "-child"), "depth file must exist once the child launched")
 assert(depth:close())
 print("ok 5 - close.md failure leaves the depth file in place")
+local before = launches
+succeeded, message = run(nil, { split = "middle" })
+assert(not succeeded and tostring(message):find("split must be", 1, true), tostring(message))
+assert(launches == before, "an unknown side must prevent launch")
+print("ok 6 - an unknown split side prevents launch")
+assert(run(nil, { split = "below" }))
+assert(launches == before + 1)
+assert(split_args.anchor_id == "block:parent" and split_args.direction == "vertical" and split_args.side == "after")
+assert(split_args.focus == false)
+assert(split_args.layout.label:find("↳ test", 1, true), "the pane carries the subagent marker")
+assert(lib.read(root .. "-close.md") == "rex block close -s session:parent block:child\n")
+print("ok 7 - split=below opens a pane beside the parent and closes only that pane")
 dofile = real_dofile
 assert(os.remove(root .. "-prompt.md"))
 assert(os.remove(root .. "-child"))
-print("Passed 5 spawn publication trials.")
+assert(os.remove(root .. "-close.md"))
+print("Passed 7 spawn publication trials.")
