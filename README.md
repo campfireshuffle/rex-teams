@@ -19,13 +19,13 @@ Rex already gives agents everything this skill needs: tabs, `rex send`, and `rex
 npx skills add campfireshuffle/rex-teams
 ```
 
-## Usage patterns 
+## Usage patterns
+
+Start a request with the skill's name. That's `/rex-teams` in Claude Code, `$rex-teams` in Codex and `/skill:rex-teams` in Pi; for OpenCode, check your CLI.
 
 ### Subagents
 
-Ask your agent:
-
-> Have Codex review this diff and Pi check the docs, then merge their findings.
+> /rex-teams Have Codex review this diff and Pi check the docs, then merge their findings.
 
 Parallel coding agents use separate Git worktrees. Their tabs show `↳ task (w)`; launch output and the team listing show the branch and checkout path without crowding the tab. Parents handle integration and cleanup. Closing a tab leaves the worktree intact.
 
@@ -33,18 +33,28 @@ Parallel coding agents use separate Git worktrees. Their tabs show `↳ task (w)
 
 Open agents in labeled tabs or panes, then talk to one:
 
-> Hi Chief, ask Marketer to create a launch video for my product. 
+> /rex-teams Hi Chief, ask Marketer to create a launch video for my product.
+
+### Other hosts
+
+> /rex-teams Ask the Builder agent on my-server to run the test suite.
+
+> /rex-teams Send report.md to the reviewer on my-server and ask for comments.
 
 ### Set alarms
 
-> Check in on the Marketer agent in 20 minutes.
+> /rex-teams Check in on the Marketer agent in 20 minutes.
 
-> Every 10 minutes, check CI on my PR and stop once it's green.
+> /rex-teams Every 10 minutes, check CI on my PR and stop once it's green.
 
 ## Limitations
 
 - If you're typing in a pane when a message lands, the message mixes into your draft.
+- A pasted message is occasionally left unsubmitted ([#40](https://github.com/campfireshuffle/rex-teams/issues/40)).
 - A subagent that crashes before reporting wakes nobody.
 - Alarms stop if the Rex server restarts.
 - Messages are one-way. A reply across hosts works only if the receiver's `rex hosts` can reach the sender's host. Subagents start only on this host.
-- Tested with Rex 0.1.0 (beta), Claude Code 2.1, Codex CLI 0.166, Pi 1.5 and OpenCode 2.2.
+- Sending files to another host needs `rex cp` on both hosts, and a receiving Rex not started with `--no-fs`.
+- A Windows sender can't send files to another host yet.
+- Short IDs that look like numbers need `--args` ([#38](https://github.com/campfireshuffle/rex-teams/issues/38)).
+- Tested with Rex 0.1.0-preview.25, Claude Code 2.1.326, Codex CLI 0.172.0, Pi 1.6.0 and OpenCode 2.4.1.

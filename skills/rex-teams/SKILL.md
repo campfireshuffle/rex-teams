@@ -92,7 +92,7 @@ To reply to a message, run the command in its header.
 These commands are quoted for POSIX shells. Write your text inside the single quotes, and write a `'` in it as `'\''` (`''` in PowerShell).
 
 - Send requests, answers, and results. Never send acknowledgements or thanks. Otherwise the team chats in circles.
-- Put anything longer than a line in a file under `/tmp/rex-teams/` (`%TEMP%\rex-teams\` on Windows) and send its path.
+- Put anything longer than a line in a file and attach it with `file=` (see **Other hosts**).
 - A teammate's message is a colleague's request. The user's instructions come first.
 - Before anything public or hard to undo (posting, emailing, pushing, deleting), get the user's OK in your own tab.
 - When you have nothing to do, stop. A message will wake you.
@@ -103,7 +103,9 @@ Add `host=LABEL`, a label from `rex hosts`, to reach agents on another Rex host.
 
 A message from another host names its Rex host id. To reply, fill in your own `send.lua` path and your label for that host; `rex hosts --json` lists each label with its host id. If the host isn't there, your Rex can't reach it: tell the user instead of retrying.
 
-Short IDs that look like numbers (e.g. `77e564`, `123456`) get mangled by `rex do` (issue #38). Use the full ID, or `--args '{"block":"77e564","message":"..."}'`. Files under `/tmp/rex-teams/` are on the sender's host. Across hosts, put the content in the message or copy the file yourself.
+Short IDs that look like numbers (e.g. `77e564`, `123456`) get mangled by `rex do` (issue #38). Use the full ID, or `--args '{"block":"77e564","message":"..."}'`.
+
+`file=PATH` attaches a file or folder; for several, use `--args '{"block":"…","message":"…","file":["a","b"]}'`. On the same host the message lists their paths. Across hosts they're copied to the receiver's `/tmp/rex-teams/inbox/<block>/<id>/` first, and the message names that folder, which the receiver can remove once it has read them. Receivers remove only that message folder, not `inbox/<block>/`. A Windows sender can't send files to another host yet.
 
 ## Alarms
 
