@@ -66,6 +66,26 @@ local function give_up(msg, why, text)
   return a
 end
 
+-- Hold message MSG, in delivery state D, because of WHY, and tell its
+-- sender once if it's held for long.
+local function hold(msg, d, look, why, now)
+  d.held_since, d.why = d.held_since or now, why
+  if not d.noticed and now - d.held_since >= M.held_notice then
+    d.noticed = true
+    return notice(msg, "held", "Message " .. msg.id .. " to " .. msg.to.name .. " has waited "
+      .. math.floor((now - d.held_since) / 60) .. " minutes: " .. why .. ". It goes out once that clears. To drop it, delete "
+      .. mail.file(msg.id) .. ".")
+  end
+  -- A busy or blocked receiver reports when it's done; the rest are
+  -- checked again shortly.
+  local event = look.status == "working" or look.status == "blocked"
+  return { kind = "hold", why = why, at = not event and now + M.poll or nil,
+    until_notice = not d.noticed and d.held_since + M.held_notice or nil }
+end
+
+-- A composer's text without its blanks, which wrapping adds.
+local function squash(text) return (text:gsub("%s", "")) end
+
 -- The delivery policy. STEP looks at one message and what its receiver's
 -- pane shows, updates the message's delivery state, and says what to do:
 --   wait   nothing until AT (or a status change, if AT is nil)
@@ -111,8 +131,12 @@ function M.step(msg, look, now)
     return give_up(msg, "files", "Message " .. msg.id .. " to " .. msg.to.name .. " wasn't sent: " .. d.attach_error
       .. ". It's kept in " .. mail.file(msg.id) .. ".")
   end
+  -- Our paste is in the composer when it shows exactly our text, or just
+  -- the one stand-in a long paste becomes. Anything a person typed around
+  -- it makes it theirs.
   local c = look.composer
-  local ours = c ~= nil and (c.ours == "id" or (c.ours == "token" and d.pasted_at ~= nil))
+  local ours = c ~= nil and d.pasted_at ~= nil
+    and (c.ours == "token" or (c.ours == "id" and squash(c.text) == squash(d.text)))
 
   if d.pasted_at then
     -- Delivered when the receiver starts working, or when our text has
@@ -122,10 +146,12 @@ function M.step(msg, look, now)
       msg.d = nil
       return { kind = "save", at = msg.due }
     end
+    -- Nothing goes to a blocked receiver, not even an Enter.
+    if look.status == "blocked" then return hold(msg, d, look, M.why(look), now) end
     if ours then
       if now - d.last < M.enter_gap then return { kind = "wait", at = d.last + M.enter_gap } end
       if (d.enters or 0) < M.enters then
-        d.enters, d.last = (d.enters or 0) + 1, now
+        d.enters, d.last, d.held_since, d.why = (d.enters or 0) + 1, now, nil, nil
         return { kind = "enter" }
       end
       return give_up(msg, "unconfirmed", "Couldn't confirm message " .. msg.id .. " reached " .. msg.to.name
@@ -142,26 +168,13 @@ function M.step(msg, look, now)
   -- Paste only when the receiver is ready. Otherwise hold, and tell the
   -- sender once if it's held for long.
   local why = M.why(look)
-  if why then
-    d.held_since, d.why = d.held_since or now, why
-    if not d.noticed and now - d.held_since >= M.held_notice then
-      d.noticed = true
-      return notice(msg, "held", "Message " .. msg.id .. " to " .. msg.to.name .. " has waited "
-        .. math.floor((now - d.held_since) / 60) .. " minutes: " .. why .. ". It goes out once that clears. To drop it, delete "
-        .. mail.file(msg.id) .. ".")
-    end
-    -- A busy or blocked receiver reports when it's done; the rest are
-    -- checked again shortly.
-    local event = look.status == "working" or look.status == "blocked"
-    return { kind = "hold", why = why, at = not event and now + M.poll or nil,
-      until_notice = not d.noticed and d.held_since + M.held_notice or nil }
-  end
+  if why then return hold(msg, d, look, why, now) end
   if msg.files and #msg.files > 0 and not d.attached then return { kind = "attach" } end
   d.held_since, d.why = nil, nil
   local resent = d.pasted_at ~= nil
   d.pastes, d.pasted_at, d.last, d.enters, d.worked = (d.pastes or 0) + 1, now, now, 0, nil
-  return { kind = "put", text = msg.head .. " · msg " .. d.tag .. (resent and " · resent" or "") .. msg.tail
-    .. msg.text .. (d.note or "") }
+  d.text = msg.head .. " · msg " .. d.tag .. (resent and " · resent" or "") .. msg.tail .. msg.text .. (d.note or "")
+  return { kind = "put", text = d.text }
 end
 
 -- Singleton ------------------------------------------------------------

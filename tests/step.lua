@@ -19,7 +19,11 @@ local function look(o)
   for k, v in pairs(o or {}) do l[k] = v end
   return l
 end
-local function ours(kind, o) return look({ composer = { text = "[from Me · msg 100-abcd …", ours = kind or "id" }, seen = o and o.seen }) end
+-- What a composer shows after msg()'s first paste.
+local PASTED = "[from Me · msg 100-abcd, who can't see this screen.] hi"
+local function ours(kind, o)
+  return look({ composer = { text = kind == "token" and "[Pasted text #1]" or PASTED, ours = kind or "id" }, seen = o and o.seen })
+end
 
 local n, failed = 0, 0
 local function trial(name, f)
@@ -106,6 +110,36 @@ trial("Enter is pressed again only while ours is in the composer, at most 3 time
   assert(a.text:find("Couldn't confirm message 100-abcd reached Reviewer", 1, true), a.text)
   assert(m.dead == "unconfirmed")
   is(step(m, ours(), 200), "wait")
+end)
+trial("no Enter goes to a blocked receiver, even with ours in the composer", function()
+  local m = msg()
+  put(m)
+  local blocked = ours()
+  blocked.status, blocked.kind = "blocked", "permission"
+  is(step(m, blocked, 102), "hold", { why = "it's asking for permission" })
+  is(step(m, blocked, 110), "hold", { why = "it's asking for permission" })
+  assert(m.d.enters == 0, "an Enter was counted while blocked")
+  is(step(m, ours(), 111), "enter")
+end)
+trial("a blocked receiver holds a resend too, with ours gone from the composer", function()
+  local m = msg()
+  put(m)
+  is(step(m, look({ status = "blocked", kind = "question" }), 110), "hold", { why = "it's asking a question" })
+  assert(m.d.pastes == 1)
+end)
+trial("Enter isn't pressed again once a person has typed around our text", function()
+  for _, text in ipairs({ PASTED .. " MY UNFINISHED DRAFT", "wait " .. PASTED }) do
+    local m = msg()
+    put(m)
+    local l = look({ composer = { text = text, ours = "id" } })
+    is(step(m, l, 102), "wait", { at = 110 })
+    is(step(m, l, 110), "hold", { why = "someone is typing there" })
+  end
+end)
+trial("our text wrapped across composer rows is still ours", function()
+  local m = msg()
+  put(m)
+  is(step(m, look({ composer = { text = PASTED:gsub(" who ", "\nwho "), ours = "id" } }), 102), "enter")
 end)
 trial("a paste token right after our paste is ours", function()
   local m = msg()

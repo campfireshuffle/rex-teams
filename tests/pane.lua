@@ -112,6 +112,19 @@ trial("an id that wraps between msg and the id is still seen", function()
   local c, seen = pane.read(entry, rows, "1795671000-abcd")
   assert(c and seen, "not seen across the wrap")
 end)
+trial("text a person adds to our unsent paste makes it not ours, so no Enter submits their draft", function()
+  local P = dofile("skills/rex-teams/scripts/postman.lua")
+  local m = { id = "100-abcd", posted = 100, head = "[from Me", tail = "] ", text = "hi",
+    to = { session = "s:1", block = "b:to", name = "R" }, from = { session = "s:1", block = "b:me", name = "Me" } }
+  local pasted = P.step(m, { status = "idle", known = true, composer = { text = "" } }, 100).text
+  for _, text in ipairs({ pasted .. " MY UNFINISHED DRAFT", "wait " .. pasted }) do
+    local entry = { composer = function() return { text = text, dim = "", top = 2, bottom = 2 } end, tokens = {} }
+    local c, seen = pane.read(entry, { {}, {} }, "100-abcd")
+    assert(c.text == text and not seen)
+    local a = P.step(m, { status = "idle", known = true, composer = c, seen = seen }, 103)
+    assert(a.kind ~= "enter", "Enter pressed on " .. text)
+  end
+end)
 trial("a pane that's gone reads as gone and nothing else is asked", function()
   reset({})
   local l = pane.look({ session = "s:1", block = "b:gone" }, "x")
