@@ -109,17 +109,6 @@ function lib.name(block)
   return block.tab
 end
 
--- Paste one line into a terminal, then press Enter. A paste event lets the
--- program tell the text from the Enter that submits it.
-function lib.paste_line(session, block, text, host)
-  lib.call("block.event", { session_id = session, block_id = block, event = { type = "paste", payload = { text = text } } }, host)
-  for _, action in ipairs({ "press", "release" }) do
-    lib.call("block.event", { session_id = session, block_id = block, event = { type = "key", payload = {
-      key = "enter", mods = "", consumed_mods = "", text = "\r", unshifted_codepoint = 13, composing = false, action = action,
-    } } }, host)
-  end
-end
-
 -- The absolute paths of PATHS, read the way a program in BLOCK's terminal
 -- would, so relative paths and ~ work. Each must exist.
 function lib.locate(session, block, paths)
@@ -158,18 +147,11 @@ local function rex_cp(host, session, from, to)
   end
 end
 
--- Copy FILES, absolute paths here, into BLOCK's inbox on HOST with one
--- rex cp, and return their paths there and the folder holding them. The
--- receiver's /tmp/rex-teams may be a symlink, and rex cp merges into a
--- symlinked folder only when it's named as the destination, so the stage
--- holds inbox/<block>/<id>/ and goes to /tmp/rex-teams/ itself.
-function lib.send_files(host, session, block, files)
-  assert(not lib.windows, "file= to another host doesn't work from Windows yet")
-  math.randomseed(os.time() + os.clock() * 1e6)
-  local id = tostring(os.time()) .. "-"
-  for _ = 1, 4 do id = id .. string.char(math.random(97, 122)) end
-  local uuid = block:gsub("^block:", "")
-  local folder = "/tmp/rex-teams/inbox/" .. uuid .. "/" .. id
+-- Where FILES, absolute paths here, land in BLOCK's inbox on another host
+-- for message ID: their paths there, and the folder holding them. Raises if
+-- two share a name or one is the root folder.
+function lib.inbox(block, id, files)
+  local folder = "/tmp/rex-teams/inbox/" .. block:gsub("^block:", "") .. "/" .. id
   local landed, names = {}, {}
   for _, file in ipairs(files) do
     local name = file:match("([^/]+)/*$")
@@ -178,8 +160,19 @@ function lib.send_files(host, session, block, files)
     names[name] = true
     landed[#landed + 1] = folder .. "/" .. name
   end
+  return landed, folder
+end
 
-  local stage = lib.path("outbox", id)
+-- Copy FILES into BLOCK's inbox on HOST for message ID, with one rex cp,
+-- where lib.inbox says. The receiver's /tmp/rex-teams may be a symlink, and
+-- rex cp merges into a symlinked folder only when it's named as the
+-- destination, so the stage holds inbox/<block>/<id>/ and goes to
+-- /tmp/rex-teams/ itself.
+function lib.send_files(host, session, block, files, id)
+  assert(not lib.windows, "file= to another host doesn't work from Windows yet")
+  local uuid = block:gsub("^block:", "")
+  local landed, folder = lib.inbox(block, id, files)
+  local stage = lib.path("stage", id)
   local ok, err = pcall(function()
     local box = table.concat({ stage, "inbox", uuid, id }, "/")
     lib.mkdir(box)
@@ -220,25 +213,35 @@ function lib.send_command(block, message, host, script)
     .. " block=" .. lib.quote(block) .. " message=" .. lib.quote(message)
 end
 
--- The header of a message, for another host when CROSS is true. The sender
--- can't know send.lua's path or its own label on the receiver's host, so the
--- receiver fills them in.
+-- The header of a message, for another host when CROSS is true, in two
+-- parts. The postman puts " · msg <id>" between them, so the receiver and
+-- the postman can tell messages apart. The sender can't know send.lua's path
+-- or its own label on the receiver's host, so the receiver fills them in.
 function lib.header(from_session, from_block, cross)
   local from
   for _, block in ipairs(lib.blocks(from_session)) do
     if block.id == from_block then from = lib.name(block) end
   end
   if not cross then
-    return "[from " .. from .. ", who can't see this screen. " .. lib.rule
+    return "[from " .. from, ", who can't see this screen. " .. lib.rule
       .. " Reply by running: " .. lib.send_command(from_block, "<reply>") .. "] "
   end
   local r = rex.exec({ "hostname" })
   local name = r and r.ok and r.stdout:match("^%s*(.-)%s*$") or ""
   assert(name ~= "", "can't read this machine's hostname")
   local id = assert(lib.call("server.status", {}).host_id, "Rex didn't report this host's host_id")
-  return "[from " .. from .. " on " .. name .. " (Rex host " .. id .. "), who can't see this screen. " .. lib.rule
+  return "[from " .. from .. " on " .. name .. " (Rex host " .. id .. ")", ", who can't see this screen. " .. lib.rule
     .. " To reply, run this with your rex-teams skill's path and your rex hosts label for that host filled in: "
     .. lib.send_command(from_block, "<reply>", "<label>", "<rex-teams skill>/scripts/send.lua") .. "] "
+end
+
+-- A name for a message: the time and four random letters.
+local seeded
+function lib.id()
+  if not seeded then math.randomseed(os.time() + os.clock() * 1e6) seeded = true end
+  local id = tostring(os.time()) .. "-"
+  for _ = 1, 4 do id = id .. string.char(math.random(97, 122)) end
+  return id
 end
 
 return lib

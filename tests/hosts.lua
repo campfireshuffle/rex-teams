@@ -1,7 +1,12 @@
 -- Run from the repo root with `luajit tests/hosts.lua` or `lua5.1 tests/hosts.lua`.
 -- Mocks rex.call, rex.server, target.resolve and `hostname` to check
--- send.lua and team.lua on this host and on another one.
+-- send.lua and team.lua on this host and on another one. send.lua queues a
+-- message; deliver() then hands it to the postman's policy and pane.lua, as
+-- the postman would, to see where it lands.
 local real_dofile = dofile
+local json = real_dofile("tests/lib/json.lua")
+local tmp = os.tmpname()
+os.remove(tmp)
 local servers, calls, pasted, events, printed, hostname
 
 -- A mock Rex server: its sessions and blocks.
@@ -63,7 +68,9 @@ local function reset()
       } },
     }),
   }
+  os.execute("rm -rf '" .. tmp .. "'")
   rex = {
+    json = json,
     call = servers[""].call,
     server = function(label)
       if not servers[label] or label == "" then error('rex.server: no host named "' .. label .. '"', 0) end
@@ -73,25 +80,54 @@ local function reset()
       local line = table.concat(argv, " ")
       calls[#calls + 1] = "exec " .. line
       if line == "hostname" then return hostname end
+      if argv[1] == "mkdir" then
+        os.execute("mkdir -p '" .. argv[3] .. "'")
+        return { ok = true, code = 0, stdout = "", stderr = "" }
+      end
       error("unexpected exec: " .. line)
     end,
   }
 end
 
-local function run(script, args)
-  rex.args = args
-  local lib = real_dofile("skills/rex-teams/scripts/lib.lua")
+local lib
+local function load()
+  lib = real_dofile("skills/rex-teams/scripts/lib.lua")
+  lib.root = tmp
   lib.me = function() return "session:me", "block:me-000000-aaaaaa" end
   lib.worktree = function() end
   dofile = function(path)
     if path:match("/lib%.lua$") then return lib end
+    if path:match("/postman%.lua$") then return { ensure = function() end } end
     return real_dofile(path)
   end
+end
+local function run(script, args)
+  rex.args = args
+  load()
   local real_print = print
   print = function(line) printed[#printed + 1] = line end
   local ok, err = pcall(real_dofile, "skills/rex-teams/scripts/" .. script)
   print, dofile = real_print, real_dofile
   return ok, err
+end
+
+-- Deliver the one queued message to an idle, empty prompt box.
+local function deliver()
+  load()
+  local P = real_dofile("skills/rex-teams/scripts/postman.lua")
+  local pane = real_dofile(lib.dir .. "pane.lua")
+  local p = io.popen("ls '" .. tmp .. "/outbox'")
+  local name = assert(p:read("*l"), "nothing was queued")
+  p:close()
+  local f = assert(io.open(tmp .. "/outbox/" .. name))
+  local msg = json.decode(f:read("*a"))
+  f:close()
+  local a = P.step(msg, { status = "idle", known = true, composer = { text = "" } }, os.time())
+  assert(a.kind == "put", a.kind)
+  pane.put(msg.to, a.text)
+  pane.enter(msg.to)
+  dofile = real_dofile
+  return msg
 end
 
 local count = 0
@@ -129,9 +165,12 @@ check("a local send by full ID, short ID or label, with no session= anywhere", f
   for _, block in ipairs({ "block:peer-00000-bbbbbb", "bbbbbb", "Helper" }) do
     reset()
     assert(run("send.lua", { block = block, message = "hi" }))
+    assert(#pasted == 0, "send.lua typed into the receiver")
+    assert(printed[1]:match("^queued message %d+%-%a%a%a%a for Chief$"), printed[1]) -- the mock names every pane by its tab
+    deliver()
     local p = assert(pasted[1])
     assert(p.server == "local" and p.block == "block:peer-00000-bbbbbb" and p.session == "session:me")
-    assert(has(p.text, "[from Chief, who can't see this screen. Don't rename the Rex session or your tab. Reply by running: rex do "), p.text)
+    assert(has(p.text, "[from Chief · msg ") and has(p.text, ", who can't see this screen. Don't rename the Rex session or your tab. Reply by running: rex do "), p.text)
     assert(has(p.text, "block='block:me-000000-aaaaaa' message='<reply>'] hi"), p.text)
     assert(not has(p.text, "session=") and not has(p.text, "host="), p.text)
     none_on("ws")
@@ -140,16 +179,19 @@ end)
 check("a local send pastes and presses Enter in the same pane", function()
   reset()
   assert(run("send.lua", { block = "Helper", message = "hi" }))
+  deliver()
   sent_once("local", "session:me", "block:peer-00000-bbbbbb")
 end)
 check("a cross-host send pastes and presses Enter in the same pane on that host", function()
   reset()
   assert(run("send.lua", { host = "ws", block = "cccccc", message = "hi" }))
+  deliver()
   sent_once("ws", "session:far", "block:far-00000-cccccc")
 end)
 check("host= a label reaches that host", function()
   reset()
   assert(run("send.lua", { host = "ws", block = "cccccc", message = "hi" }))
+  deliver()
   local p = assert(pasted[1])
   assert(p.server == "ws" and p.block == "block:far-00000-cccccc" and p.session == "session:far")
 end)
@@ -173,8 +215,9 @@ end)
 check("a cross-host header names this host and asks for the receiver's label", function()
   reset()
   assert(run("send.lua", { host = "ws", block = "cccccc", message = "hi" }))
+  local msg = deliver()
   local text = assert(pasted[1]).text
-  local want = "[from Chief on mac-host (Rex host id-mac), who can't see this screen. Don't rename the Rex session or your tab."
+  local want = "[from Chief on mac-host (Rex host id-mac) · msg " .. msg.id .. ", who can't see this screen. Don't rename the Rex session or your tab."
     .. " To reply, run this with your rex-teams skill's path and your rex hosts label for that host filled in:"
     .. " rex do <rex-teams skill>/scripts/send.lua host='<label>' block='block:me-000000-aaaaaa' message='<reply>'] hi"
   assert(text == want, text)
@@ -199,7 +242,8 @@ check("team.lua host= lists remote agents with host= in their commands", functio
   assert(has(all, "Builder  rex do "), all)
   assert(has(all, " host='ws' block='block:far-00000-cccccc' message='<message>'"), all)
   assert(not has(all, "(you)") and not has(all, "session="), all)
-  none_on("local")
+  -- This host is asked only for its own outbox, for the queued counts.
+  for _, c in ipairs(calls) do assert(not c:find("^local ") or c == "local block.method", "unexpected call " .. c) end
 end)
 check("team.lua host= names an unlabeled session by its ID", function()
   reset()
@@ -220,5 +264,30 @@ check("team.lua on this host prints commands without host= or session=", functio
   assert(has(all, "Chief  (you)"), all)
   assert(has(all, "block='block:peer-00000-bbbbbb' message='<message>'"), all)
   assert(not has(all, "host=") and not has(all, "session="), all)
+end)
+check("team.lua says how many messages wait for an agent, and why", function()
+  reset()
+  load()
+  local mail = real_dofile(lib.dir .. "mail.lua")
+  os.execute("mkdir -p '" .. tmp .. "/outbox'")
+  local to = { session = "session:me", block = "block:peer-00000-bbbbbb", name = "Helper" }
+  mail.write({ id = "100-aaaa", posted = 100, to = to, d = { why = "someone is typing there" } })
+  mail.write({ id = "101-bbbb", posted = 101, to = to })
+  mail.write({ id = "102-cccc", posted = 102, to = to, dead = "gone" })
+  mail.write({ id = "103-dddd", posted = 103, to = to, notice = true })
+  dofile = real_dofile
+  local plain = servers[""].call
+  rex.call = function(method, args)
+    if method == "block.method" and args.method == "list_dir" then
+      local entries = {}
+      for _, id in ipairs({ "100-aaaa", "101-bbbb", "102-cccc", "103-dddd" }) do entries[#entries + 1] = { name = id .. ".json" } end
+      return { status = "ok", entries = entries }
+    end
+    return plain(method, args)
+  end
+  assert(run("team.lua", {}))
+  local all = table.concat(printed, "\n")
+  assert(has(all, "block='block:peer-00000-bbbbbb' message='<message>'\n  (2 messages waiting: someone is typing there)\n"
+    .. "  (1 message not delivered; its sender was told)"), all)
 end)
 print("Passed " .. count .. " host trials.")
