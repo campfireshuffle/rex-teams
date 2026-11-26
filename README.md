@@ -19,7 +19,7 @@ Rex already gives agents everything this skill needs: tabs, `rex send`, and `rex
 npx skills add campfireshuffle/rex-teams
 ```
 
-Requires Rex 0.1.0-preview.25 or later on every host you use.
+Requires Rex 0.1.0-preview.25 or later on every host you use, and `sha256sum` (macOS 15+ or coreutils) on macOS and Linux.
 
 ## Usage patterns
 
@@ -54,7 +54,7 @@ Open agents in labeled tabs or panes, then talk to one:
 - If you're typing in a pane when a message lands, the message mixes into your draft.
 - A pasted message is occasionally left unsubmitted ([#40](https://github.com/campfireshuffle/rex-teams/issues/40)).
 - A subagent that crashes before reporting wakes nobody.
-- Alarms stop if the Rex server restarts.
+- Alarms come back after a Rex restart only once you add the trust rule that `alarm.lua` prints. On Windows they don't come back.
 - Messages are one-way. A reply across hosts works only if the receiver's `rex hosts` can reach the sender's host.
 - `spawn.lua` starts subagents only on your own host. You can message agents on other hosts and send them files, but not start them there yet ([#37](https://github.com/campfireshuffle/rex-teams/issues/37)).
 - A Windows sender can't send files to another host yet.
