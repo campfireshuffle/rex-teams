@@ -83,7 +83,7 @@ List your team, then message a teammate by running the command printed next to i
 rex do <skill>/scripts/team.lua
 ```
 
-Your pane's ID is `$REX_BLOCK` (`$env:REX_BLOCK` in PowerShell). Rex commands take it wherever they want a session too, because a pane's ID names its session.
+Your pane's ID is `$REX_BLOCK` (`$env:REX_BLOCK` in PowerShell). `-s` accepts it as well as a session ID, because a pane's ID names its session.
 
 A tab with one pane goes by its tab label. In a split tab, each pane goes by its own label.
 
