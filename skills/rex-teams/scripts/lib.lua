@@ -173,6 +173,7 @@ function lib.send_files(host, session, block, files)
   local landed, names = {}, {}
   for _, file in ipairs(files) do
     local name = file:match("([^/]+)/*$")
+    if not name then error("file " .. file .. ": can't send the root folder", 0) end
     if names[name] then error("two files are named " .. name .. "; send them separately", 0) end
     names[name] = true
     landed[#landed + 1] = folder .. "/" .. name

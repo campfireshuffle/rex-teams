@@ -105,7 +105,7 @@ A message from another host names its Rex host id. To reply, fill in your own `s
 
 Short IDs that look like numbers (e.g. `77e564`, `123456`) get mangled by `rex do` (issue #38). Use the full ID, or `--args '{"block":"77e564","message":"..."}'`.
 
-`file=PATH` attaches a file or folder; for several, use `--args '{"block":"…","message":"…","file":["a","b"]}'`. On the same host the message lists their paths. Across hosts they're copied to the receiver's `/tmp/rex-teams/inbox/<block>/<id>/` first, and the message names that folder, which the receiver can remove once it has read them. Receivers remove only that message folder, not `inbox/<block>/`.
+`file=PATH` attaches a file or folder; for several, use `--args '{"block":"…","message":"…","file":["a","b"]}'`. On the same host the message lists their paths. Across hosts they're copied to the receiver's `/tmp/rex-teams/inbox/<block>/<id>/` first, and the message names that folder, which the receiver can remove once it has read them. Receivers remove only that message folder, not `inbox/<block>/`. A Windows sender can't send files to another host yet.
 
 ## Alarms
 

@@ -20,6 +20,14 @@ end
 sh("ln -s " .. quote(src .. "/a.md") .. " " .. quote(src .. "/link.md"))
 sh("ln -s " .. quote(src .. "/dir") .. " " .. quote(src .. "/linkdir"))
 sh("ln -s c.txt " .. quote(src .. "/dir/sub/inner"))
+-- A file list_dir lists but cp can't read, and a name with a line break.
+local locked, broken = "locked.md", "line\nbreak.md"
+for _, name in ipairs({ locked, broken }) do
+  local f = assert(io.open(src .. "/" .. name, "w"))
+  f:write(name)
+  f:close()
+end
+sh("chmod 000 " .. quote(src .. "/" .. locked))
 
 local calls, pasted, events, execs, rex_cps, remote_root, cp_result
 
@@ -79,6 +87,7 @@ local function local_dir(block, args)
   local path = args.path
   local p = path:sub(1, 1) == "/" and path or src .. "/" .. path
   p = p:gsub("/+$", "")
+  if p == "" then p = "/" end
   if os.execute("test -d " .. quote(p)) == 0 then
     if not args.files then return { status = "ok", path = p, entries = {} } end
     local entries = {}
@@ -87,6 +96,8 @@ local function local_dir(block, args)
       if not args.prefix or name:lower():sub(1, #args.prefix) == args.prefix:lower() then entries[#entries + 1] = { name = name } end
     end
     ls:close()
+    -- ls splits a name with a line break, so look for the exact name too.
+    if args.prefix and args.prefix:find("\n") and exists(p .. "/" .. args.prefix) then entries[#entries + 1] = { name = args.prefix } end
     return { status = "ok", path = p, entries = entries, truncated = false }
   end
   local up = p
@@ -313,6 +324,30 @@ check("Windows without TEMP: lib.lua stops with an error", function()
   assert(not ok and has(tostring(err), "TEMP"), tostring(err))
   assert(ok2 and lib.root == "C:\\T\\rex-teams", tostring(lib))
 end)
+check("a file cp can't read: error, no rex cp, nothing sent", function()
+  fails({ host = "ws", block = "Builder", message = "see", file = { "a.md", locked } }, "can't copy the files")
+  assert(rexes() == 0 and tree(root .. "/outbox") == ".", "rex cp ran or the stage was left")
+end)
+check("/tmp/rex-teams on the receiver not a folder or denied: error, no rex cp, nothing sent", function()
+  for _, status in ipairs({ "not_dir", "denied" }) do
+    reset()
+    remote_root = status
+    fails({ host = "ws", block = "Builder", message = "see", file = "a.md" }, "/tmp/rex-teams on ws: " .. status)
+    assert(rexes() == 0 and tree(root .. "/outbox") == ".", "rex cp ran or the stage was left")
+  end
+end)
+check("a path with a line break: error, nothing copied or sent", function()
+  for _, host in ipairs({ false, "ws" }) do
+    reset()
+    fails({ host = host or nil, block = host and "Builder" or "Helper", message = "see", file = broken }, "a line break")
+    assert(rexes() == 0 and not exists(root .. "/outbox"))
+  end
+end)
+check("file=/ to another host: a clear error, nothing copied or sent", function()
+  fails({ host = "ws", block = "Builder", message = "see", file = "/" }, "file /: can't send the root folder")
+  assert(rexes() == 0 and not exists(root .. "/outbox"))
+end)
+sh("chmod 600 " .. quote(src .. "/" .. locked))
 sh("rm -rf " .. quote(tmp))
 if failed > 0 then
   print("Failed " .. failed .. " of " .. count .. " file trials.")
