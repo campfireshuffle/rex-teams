@@ -119,20 +119,7 @@ Keep the message to a short note to yourself, since you'll still have the conver
 
 Cancel with `rex block close -s "$REX_BLOCK" <alarm block ID>`; list alarms with `rex block ls -s "$REX_BLOCK"`.
 
-If the script prints that the alarm won't survive a Rex restart, tell the user once. The fix is a trust rule in Rex's `init.lua`, followed by `rex config reload`. The script prints it with the real path:
-
-```lua
-rex.set("resume.trust.rex-teams-alarm", {
-  command = { "rex", "do", "<absolute path to the skill>/scripts/alarm.lua" },
-  flags = { ["--args"] = { "keep", values = 1 } },
-})
-```
-
-Don't edit the user's Rex config yourself. With the rule, an alarm comes back after Rex restarts. A one-shot that was due meanwhile arrives marked `[late by Ns, Rex restarted]`; a recurring alarm skips the ticks it missed, and does the same after the computer sleeps.
-
-If the script prints that Rex has no resume record for the alarm, check the alarm's record with the command it prints, and tell the user what it shows. It may print `alarm worker failed: …` instead; then the alarm didn't start, so tell the user the error.
-
-An alarm block that shows `alarm worker failed: …` is dead. Read the error, then close the block with `rex block close`.
+If `alarm.lua` prints that an alarm won't survive a Rex restart, pass its `rex.set(…)` line to the user once. Don't edit their Rex config. With the rule, a one-shot that was due during a restart arrives marked `[late by Ns, Rex restarted]`, and recurring alarms skip missed ticks. If it prints that Rex has no resume record, or an alarm block shows `alarm worker failed: …`, tell the user what it says; a failed alarm block is dead, so close it.
 
 ## Rules
 

@@ -63,7 +63,6 @@ rex = {
     end
     if method == "session.new_block" then state.blocks["block:alarm"] = args.session_id return { block_id = "block:alarm" } end
     if method == "com.superlogical.terminal.program_resume_records" then return { records = state.records } end
-    if method == "block.method" and args.method == "format" then return { content = state.screen or "" } end
     return {}
   end,
   exec = function(argv, opts)
@@ -324,11 +323,9 @@ trial("without OSC7577_TOKEN the worker stops and the setter says why", function
   assert(#state.timers == 0 and #state.out == 0, "the alarm armed without a report")
   reset()
   state.records = {}
-  state.screen = "\nalarm worker failed: OSC7577_TOKEN isn't set, so Rex can't resume this alarm\n"
   set({ ["in"] = 5, message = "x" })
   assert(call("session.new_block").options.exit.on_completion == false, "a failed worker's block must stay")
-  assert(call("block.method").args.unwrap, "read the screen unwrapped")
-  assert(state.printed[2] == "alarm: alarm worker failed: OSC7577_TOKEN isn't set, so Rex can't resume this alarm", tostring(state.printed[2]))
+  assert(state.printed[2] == "alarm: Rex has no resume record for this alarm after 5s. See why with: rex capture -b block:alarm", tostring(state.printed[2]))
 end)
 
 local function hint() return state.printed[2] or "" end

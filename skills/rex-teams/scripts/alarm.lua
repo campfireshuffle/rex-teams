@@ -121,9 +121,7 @@ if not record then
   record = chosen(ev and ev.records) or chosen(records())
 end
 if not record then
-  local screen = lib.call("block.method", { session_id = session, block_id = alarm, method = "format", args = { format = "text", unwrap = true } }).content
-  local failed = screen:match("alarm worker failed: [^\r\n]*")
-  print("alarm: " .. (failed or "Rex has no resume record for this alarm after 5s. Check with: rex block call -b " .. alarm .. " program_resume_records"))
+  print("alarm: Rex has no resume record for this alarm after 5s. See why with: rex capture -b " .. alarm)
 elseif not record.trusted then
   print("alarm: this alarm won't survive a Rex restart"
     .. (record.untrusted_reason == "no_rule" and "" or " (" .. tostring(record.untrusted_reason) .. ")")
