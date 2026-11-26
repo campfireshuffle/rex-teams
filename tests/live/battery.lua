@@ -109,7 +109,7 @@ local function send(block, text, host) return run("send.lua", { block = block, m
 -- text the postman pasted.
 local function forge(block, text, before)
   local id = tostring(os.time()) .. "-" .. string.char(math.random(97, 122), math.random(97, 122), math.random(97, 122), math.random(97, 122))
-  local msg = { id = id, posted = os.time(), to = { session = session, block = block, name = "receiver" },
+  local msg = { id = id, posted = os.time(), seq = 0, to = { session = session, block = block, name = "receiver" },
     from = { session = session, block = sender, name = "battery sender" },
     head = "[from battery sender", tail = ", who can't see this screen.] ", text = text .. quiet }
   local pasted = msg.head .. " · msg " .. id .. msg.tail .. msg.text
@@ -168,7 +168,7 @@ function scenarios.busy(c)
   local working = status(c.block) == "working"
   -- The CLI takes it in: the id shows on its screen.
   local shown = wait_for(function() return seen(c.block, id) end, 90)
-  return ok and working and shown, ("delivered %.1fs into the turn"):format(took)
+  return ok and working and shown, ("delivered %.1fs into the turn%s%s"):format(took, working and "" or ", turn over by then", shown and "" or ", id never shown")
 end
 function scenarios.lost_enter(c)
   -- What a lost Enter leaves: our text in the composer, unsent.
