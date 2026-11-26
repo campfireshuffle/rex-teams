@@ -15,7 +15,8 @@ local sessions = { { session_id = mine } }
 if host then sessions = lib.call("session.list", {}, host).sessions end
 local queued = {}
 for _, msg in ipairs(mail.list()) do
-  if msg.to.host == host and not msg.notice then
+  -- An alarm counts once it's due.
+  if msg.to.host == host and not msg.notice and (msg.d or not (msg.at or msg.every)) then
     local q = queued[msg.to.block] or { n = 0, stopped = 0 }
     queued[msg.to.block] = q
     if msg.dead then q.stopped = q.stopped + 1 else

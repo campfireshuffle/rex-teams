@@ -345,9 +345,10 @@ function M.run()
         -- A one-shot already late when this postman starts was due while
         -- Rex, or this postman, was down.
         if msg.at and not msg.d and msg.at <= started - 1 then msg.late = started - msg.at end
+        -- pane.look attaches to the receiver's session, which also brings
+        -- its status events here.
         msgs[msg.id] = msg
         wake[msg.id] = 0
-        if not msg.to.host then pcall(lib.attach, msg.to.session) end
       end
     end
     for id in pairs(msgs) do
@@ -406,7 +407,11 @@ function M.run()
           wake[msg.id] = msg.dead and math.huge or now + M.poll
           load()
         else
-          if a.kind == "save" then save(msg) end
+          -- Record why it's held, for team.lua, when that changes.
+          if a.kind == "save" or (a.kind == "hold" and msg.d.saved_why ~= a.why) then
+            if a.kind == "hold" then msg.d.saved_why = a.why end
+            save(msg)
+          end
           if msgs[msg.id] then
             -- Another host sends no status events here, so check it shortly.
             local at = math.min(a.at or math.huge, a.until_notice or math.huge, msg.to.host and now + M.poll or math.huge)
