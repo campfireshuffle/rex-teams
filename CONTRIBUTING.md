@@ -11,7 +11,8 @@ Thanks for helping. rex-teams is meant to stay small: a few Lua scripts that Rex
 
 1. Keep the scripts to Lua 5.1 and Rex's `rex` API, so they run wherever Rex does. Check they parse with `luac5.1 -p skills/rex-teams/scripts/*.lua`.
 2. Test the change in Rex with real agents. At least run one fan-out (one subagent each of Claude, Codex, and Pi), one resume, and one alarm, and say in the pull request what you ran.
-3. Update `README.md` when behavior changes. Release notes are written from the merged pull requests, so a clear title is enough.
+3. **No fallbacks.** Each script does a thing one way. When it can't, it stops with an error that says what went wrong. Don't keep a second code path for older Rex or for when the first one fails, and don't substitute a default or retry silently. A fallback hides the failure, is rarely tested, and is how a message reaches the wrong pane. If a change needs a newer Rex, say so in `README.md`.
+4. Update `README.md` when behavior changes. Release notes are written from the merged pull requests, so a clear title is enough.
 
 ## Pull requests
 
