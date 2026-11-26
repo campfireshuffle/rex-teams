@@ -3,15 +3,14 @@
 --   rex do <skill>/scripts/send.lua [host=HOST] block=BLOCK message='MESSAGE'
 --
 -- BLOCK is the other agent's terminal: a full block ID, a short ID or a label,
--- as Rex reads it. HOST is a label or host_id from `rex hosts`; leave it out
--- for this host. session=SESSION narrows the search. team.lua prints this
--- command, filled in, for each agent.
+-- as Rex reads it. HOST is a label from `rex hosts`; leave it out for this
+-- host. team.lua prints this command, filled in, for each agent.
 -- The message arrives as
 --   [from <your name>, who can't see this screen. <rule> Reply by running: <command>] MESSAGE
--- Across hosts, the header adds `on <hostname>` and a reply hint with host='<host_id>'.
 -- so the other agent knows who wrote and how to answer, even if it has never
 -- heard of this skill. Without "can't see this screen", agents tend to answer
--- in their own pane, where nobody reads it.
+-- in their own pane, where nobody reads it. Across hosts, the header names
+-- this host and leaves the reply's host='<label>' for the reader to fill in.
 local lib = dofile(debug.getinfo(1, "S").source:gsub("^@", ""):match("^(.*[/\\])") .. "lib.lua")
 local a = rex.args
 local usage = "usage: send.lua [host=HOST] block=BLOCK message='MESSAGE'"
@@ -21,9 +20,9 @@ assert(not message:find("[\r\n]"), "the message must be one line; put longer tex
 local target = a.block and tostring(a.block)
 -- Rex resolves an empty query to some terminal.
 assert(target and target:match("%S"), usage)
-local host = lib.host(a.host)
+local host = a.host and tostring(a.host)
 
-local session, block = lib.target(host, target, a.session and tostring(a.session))
+local session, block = lib.target(host, target)
 local from_session, from_block = lib.me()
 local header = lib.header(from_session, from_block, host ~= nil)
 lib.attach(session, host)

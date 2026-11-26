@@ -81,16 +81,16 @@ check("the reply command in a message header runs as written", function()
   local reply = assert(header:match("Reply by running: (.*)%] $"))
   arrives(reply, "<reply>")
 end)
-check("a host_id and a cross-host reply run as written once the script path is filled in", function()
-  local id = "7c6a4922-c7e7-483a-95d4-89cabc146085"
+check("a host label and a cross-host reply run as written once filled in", function()
   for _, message in ipairs(tricky) do
-    arrives(lib.send_command("block:b1", message, id), message, id)
+    arrives(lib.send_command("block:b1", message, "ws 1"), message, "ws 1")
   end
-  rex = { call = function() return { host_id = id } end, exec = function() return { ok = true, stdout = "box\n" } end }
+  rex = { call = function() return { host_id = "id-mac" } end, exec = function() return { ok = true, stdout = "box\n" } end }
   local header = lib.header("session:test", "block:b1", true)
-  local reply = assert(header:match("Reply by running, with your rex%-teams skill's path filled in: (.*)%] $"))
-  local path = lib.quote(lib.dir .. "send.lua")
-  arrives((reply:gsub("<rex%-teams skill>/scripts/send%.lua", function() return path end)), "<reply>", id)
+  local reply = assert(header:match("your rex hosts label for that host filled in: (.*)%] $"), header)
+  local filled = reply:gsub("<rex%-teams skill>/scripts/send%.lua", function() return lib.quote(lib.dir .. "send.lua") end)
+    :gsub("<label>", "ws 1")
+  arrives(filled, "<reply>", "ws 1")
 end)
 sh("rm -rf " .. quote(root))
 print("Passed " .. count .. " send command trials through /bin/sh.")

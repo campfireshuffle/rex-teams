@@ -38,39 +38,15 @@ function lib.write(path, text)
 end
 
 -- Rex on HOST, a label from `rex hosts`, or on this host when HOST is nil.
--- rex.server fails on a host it doesn't know, so nothing lands on the wrong one.
+-- rex.server fails on a label it doesn't know, so nothing lands on this host instead.
 function lib.call(method, args, host)
-  return assert((host and rex.server(host) or rex).call(method, args))
-end
-
--- The label of the host that VALUE names, or nil for this host. VALUE is a
--- label or a host_id from `rex hosts`, or this host's own host_id. Anything
--- else fails rather than fall back to this host.
-function lib.host(value)
-  if value == nil then return nil end
-  value = tostring(value)
-  local me = lib.call("server.status", {}).host_id
-  if value == me then return nil end
-  local r = rex.exec({ "rex", "hosts", "--json" })
-  for _, entry in ipairs(r and r.ok and rex.json.decode(r.stdout).hosts or {}) do
-    local h = entry.host
-    if h.label == value or (h.host_id and h.host_id == value) then
-      if h.host_id and h.host_id == me then return nil end
-      -- A stale entry could point the label at a different machine now.
-      if h.label ~= value and lib.call("server.status", {}, h.label).host_id ~= value then
-        error("host " .. h.label .. " no longer has host_id " .. value .. ". Tell your user instead of retrying.", 0)
-      end
-      return h.label
-    end
-  end
-  error("no host " .. value .. " in your rex hosts; your Rex can't reach it. Tell your user instead of retrying.", 0)
+  return assert((host and assert(rex.server(host)) or rex).call(method, args))
 end
 
 -- The session and full ID of BLOCK on HOST. BLOCK is anything Rex accepts:
--- a full ID, a short ID or a label. SESSION, if given, narrows the search.
-function lib.target(host, block, session)
-  local r = lib.call("target.resolve", { queries = { block }, kinds = { "block" },
-    scope = session and { session = session } or nil }, host).results[1]
+-- a full ID, a short ID or a label.
+function lib.target(host, block)
+  local r = lib.call("target.resolve", { queries = { block }, kinds = { "block" } }, host).results[1]
   if r.status == "resolved" then return r.target.session_id, r.target.block_id end
   local choices = {}
   for _, c in ipairs(r.candidates or {}) do choices[#choices + 1] = c.block_id .. " (" .. c.label .. ", " .. c.where .. ")" end
@@ -149,32 +125,32 @@ function lib.quote(s)
 end
 
 -- The command that sends a message to a terminal, for pasting into prompts.
--- HOST is the label or host_id the reader's Rex knows the terminal's host by.
+-- HOST is the reader's `rex hosts` label for the terminal's host.
 -- SCRIPT is send.lua's path as written in the command.
 function lib.send_command(block, message, host, script)
   return "rex do " .. (script or lib.quote(lib.dir .. "send.lua")) .. (host and " host=" .. lib.quote(host) or "")
     .. " block=" .. lib.quote(block) .. " message=" .. lib.quote(message)
 end
 
--- The header of a message to another host when CROSS is true. send.lua's
--- path differs on every host, so the reply names it by a placeholder, and
--- this host by its host_id, which any Rex that can reach it has in `rex hosts`.
+-- The header of a message, for another host when CROSS is true. The sender
+-- can't know send.lua's path or its own label on the receiver's host, so the
+-- receiver fills them in.
 function lib.header(from_session, from_block, cross)
   local from
   for _, block in ipairs(lib.blocks(from_session)) do
     if block.id == from_block then from = lib.name(block) end
   end
-  local reply = lib.send_command(from_block, "<reply>")
-  local lead = " Reply by running: "
-  if cross then
-    local name = rex.exec({ "hostname" })
-    from = from .. " on " .. (name and name.ok and name.stdout:match("^%s*(.-)%s*$") or "another Rex host")
-    local id = lib.call("server.status", {}).host_id
-    reply = id and lib.send_command(from_block, "<reply>", id, "<rex-teams skill>/scripts/send.lua")
-    lead = " Reply by running, with your rex-teams skill's path filled in: "
+  if not cross then
+    return "[from " .. from .. ", who can't see this screen. " .. lib.rule
+      .. " Reply by running: " .. lib.send_command(from_block, "<reply>") .. "] "
   end
-  return "[from " .. from .. ", who can't see this screen. " .. lib.rule
-    .. (reply and lead .. reply or "") .. "] "
+  local r = rex.exec({ "hostname" })
+  local name = r and r.ok and r.stdout:match("^%s*(.-)%s*$") or ""
+  assert(name ~= "", "can't read this machine's hostname")
+  local id = assert(lib.call("server.status", {}).host_id, "Rex didn't report this host's host_id")
+  return "[from " .. from .. " on " .. name .. " (Rex host " .. id .. "), who can't see this screen. " .. lib.rule
+    .. " To reply, run this with your rex-teams skill's path and your rex hosts label for that host filled in: "
+    .. lib.send_command(from_block, "<reply>", "<label>", "<rex-teams skill>/scripts/send.lua") .. "] "
 end
 
 return lib
