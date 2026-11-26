@@ -19,7 +19,7 @@ Rex already gives agents everything this skill needs: tabs, `rex send`, and `rex
 npx skills add campfireshuffle/rex-teams
 ```
 
-Requires Rex 0.1.0-preview.25 or later on every host you use, and `sha256sum` (macOS 15+ or coreutils) on macOS and Linux.
+Requires Rex 0.1.0-preview.25 or later on every host you use.
 
 ## Usage patterns
 
@@ -49,25 +49,12 @@ Open agents in labeled tabs or panes, then talk to one:
 
 > /rex-teams Every 10 minutes, check CI on my PR and stop once it's green.
 
-### Keep alarms across Rex restarts
-
-Rex resumes an alarm after it restarts only if you trust rex-teams' alarm script. Add this to Rex's `init.lua`, with the absolute path of the installed skill, then run `rex config reload`:
-
-```lua
-rex.set("resume.trust.rex-teams-alarm", {
-  command = { "rex", "do", "<absolute path to the skill>/scripts/alarm.lua" },
-  flags = { ["--args"] = { "keep", values = 1 } },
-})
-```
-
-An alarm's details are its `--args`, so the rule trusts that one script with any arguments. Until you add the rule, setting an alarm prints it with the real path. A one-shot alarm that was due while Rex was down fires once when Rex is back, marked `[late by Ns, Rex restarted]`. A recurring alarm skips the ticks it missed, and does the same after the computer sleeps.
-
 ## Limitations
 
 - If you're typing in a pane when a message lands, the message mixes into your draft.
 - A pasted message is occasionally left unsubmitted ([#40](https://github.com/campfireshuffle/rex-teams/issues/40)).
 - A subagent that crashes before reporting wakes nobody.
-- On Windows, alarms don't come back after a Rex restart.
+- Alarms stop if the Rex server restarts.
 - Messages are one-way. A reply across hosts works only if the receiver's `rex hosts` can reach the sender's host.
 - `spawn.lua` starts subagents only on your own host. You can message agents on other hosts and send them files, but not start them there yet ([#37](https://github.com/campfireshuffle/rex-teams/issues/37)).
 - A Windows sender can't send files to another host yet.
