@@ -351,6 +351,11 @@ function M.run()
   local msgs, wake = {}, {}
   local function key(msg) return (msg.to.host or "") .. " " .. msg.to.block end
 
+  -- The postman has run without a gap since AWAKE: a timer that fires late
+  -- means the machine slept, or Rex stalled, from when it was due until now.
+  -- EXPECTED is when the next pass is due.
+  local awake, expected = started, started
+
   local function load()
     local seen = {}
     for _, msg in ipairs(mail.list()) do
@@ -378,21 +383,40 @@ function M.run()
       by[k] = by[k] or {}
       table.insert(by[k], msg)
     end
-    for _, list in pairs(by) do
-      table.sort(list, function(a, b) if a.posted ~= b.posted then return a.posted < b.posted end return a.id < b.id end)
-    end
+    for _, list in pairs(by) do table.sort(list, mail.before) end
     return by
   end
 
+  -- A message whose file is gone was dropped by its sender: forget it.
   local function save(msg)
     if not mail.write(msg, true) then msgs[msg.id], wake[msg.id] = nil, nil end
   end
 
-  local function serve(msg)
+  -- The time step sees. os.time() is whole seconds, and the postman's own
+  -- work (slow looks, a timer rounded to the second) can make it late. So a
+  -- recurring tick that came due while the postman was running is judged
+  -- at its due time, and while it's on its way, the next tick overtakes it
+  -- only once that one is 1s late. Every other message sees os.time().
+  local function clock(msg)
     local now = os.time()
+    if not msg.every then return now end
+    if not msg.d then
+      if msg.due and msg.due <= now and msg.due >= awake then return msg.due end
+      return now
+    end
+    return math.max(msg.d.started, now - 1)
+  end
+
+  local function serve(msg)
     local look
-    for _ = 1, 4 do
-      local a = M.step(msg, look, now)
+    for _ = 1, 6 do
+      local fresh = not msg.d
+      local a = M.step(msg, look, clock(msg))
+      -- Time spent queued behind another message counts as held.
+      if fresh and msg.d and msg.behind then
+        msg.d.held_since, msg.d.noticed, msg.behind = msg.behind.since, msg.behind.noticed, nil
+      end
+      local now = os.time()
       if a.kind == "look" then
         -- A pane Rex can't reach is held like a busy one, and its sender
         -- hears about it after a while.
@@ -402,9 +426,13 @@ function M.run()
         local ok, err = pcall(pane.attach, msg.to, msg.files, msg.id)
         if ok then msg.d.attached = true else msg.d.attach_error = tostring(err) end
         save(msg)
+        if not msgs[msg.id] then return end
+        -- The receiver may have changed while the files were copied.
+        look = nil
       else
         if a.kind == "put" then
           save(msg) -- record the attempt before the paste, so a restart confirms rather than pastes again
+          if not msgs[msg.id] then return end
           pane.put(msg.to, a.text)
           pane.enter(msg.to)
           wake[msg.id] = now + 1
@@ -429,7 +457,8 @@ function M.run()
           if msgs[msg.id] then
             -- Another host sends no status events here, so check it shortly.
             local at = math.min(a.at or math.huge, a.until_notice or math.huge, msg.to.host and now + M.poll or math.huge)
-            if msg.every and msg.due and not msg.dead then at = math.min(at, msg.due) end
+            -- A tick on its way is overtaken once the next one is 1s late (see clock).
+            if msg.every and msg.due and not msg.dead then at = math.min(at, msg.d and msg.due + 1 or msg.due) end
             wake[msg.id] = at
           end
         end
@@ -438,19 +467,46 @@ function M.run()
     end
   end
 
+  -- MSG is due but waits behind FRONT, which is on its way. That counts as
+  -- held: its sender hears once, after M.held_notice. Returns when to look
+  -- again, or nil.
+  local function behind(msg, front, now)
+    local due = msg.every and (msg.due or msg.start + msg.every) or msg.at or msg.posted
+    if now < due then return nil end
+    if not msg.behind then
+      msg.behind = { since = now }
+      save(msg)
+    end
+    if msg.behind.noticed or msg.notice or self_addressed(msg) then return nil end
+    if now - msg.behind.since < M.held_notice then return msg.behind.since + M.held_notice end
+    msg.behind.noticed = true
+    save(msg)
+    if not msgs[msg.id] then return nil end
+    mail.notice(msg.from, "Message " .. msg.id .. " to " .. msg.to.name .. " has waited "
+      .. math.floor((now - msg.behind.since) / 60) .. " minutes behind message " .. front.id .. ": "
+      .. (front.d.why or "that one is still on its way") .. ". It goes out once that clears. To drop it, delete "
+      .. mail.file(msg.id) .. ".")
+    load()
+    return nil
+  end
+
   local timer
   local function pass()
     -- Sleep until the next thing is due, and at most until the next check
     -- of the outbox. Messages queued behind another wait for it.
     local next_at = os.time() + M.poll
+    if os.time() > expected + 1 then awake = os.time() end
     local ok, err = pcall(function()
       load()
       local now = os.time()
       for _, list in pairs(queues()) do
         -- The first message not yet dead goes first; alarms not yet due
         -- don't hold up the messages behind them.
+        local front
         for _, msg in ipairs(list) do
-          if not msg.dead then
+          if front then
+            if not msg.dead then next_at = math.min(next_at, behind(msg, front, now) or math.huge) end
+          elseif not msg.dead then
             if (wake[msg.id] or 0) <= now then
               local ok2, err2 = pcall(serve, msg)
               if not ok2 then
@@ -461,14 +517,15 @@ function M.run()
             if msgs[msg.id] then next_at = math.min(next_at, wake[msg.id] or 0) end
             -- Removed means delivered: the next one may go at once.
             if not msgs[msg.id] then next_at = now end
-            if msgs[msg.id] and msg.d then break end
+            if msgs[msg.id] and msg.d then front = msg end
           end
         end
       end
     end)
     if not ok then print("postman: " .. tostring(err)) end
     if timer then timer:cancel() end
-    timer = rex.after(math.max(0, next_at - os.time()), pass)
+    expected = math.max(next_at, os.time())
+    timer = rex.after(expected - os.time(), pass)
   end
 
   -- A receiver's status changed: a paste that made it work is delivered,
