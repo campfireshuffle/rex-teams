@@ -13,13 +13,18 @@
 -- The postman delivers it; see postman.lua. Delete the file to drop the
 -- message or cancel the alarm.
 --
--- AT is a unix time; EVERY repeats every EVERY seconds from now. FILES are
+-- AT is a unix time; EVERY repeats every EVERY seconds from now, at least
+-- mail.min_every, since delivering one takes a few seconds. FILES are
 -- paths as the sender's terminal reads them, and must exist. On this host
 -- the message names them; on another host they're copied at delivery into
 -- the receiver's /tmp/rex-teams/inbox/<block>/<id>/, which the message names.
 local dir = debug.getinfo(1, "S").source:gsub("^@", ""):match("^(.*[/\\])")
 local lib = dofile(dir .. "lib.lua")
 local mail = {}
+
+-- The shortest interval: delivering a message takes about 2 s (the paste,
+-- then one look at the prompt box), so a shorter one would lose ticks.
+mail.min_every = 10
 
 function mail.dir() return lib.path("outbox") end
 function mail.file(id) return lib.path("outbox", id .. ".json") end
@@ -44,17 +49,17 @@ function mail.remove(id)
   os.remove(mail.file(id))
 end
 
--- The ids in the outbox, read through the caller's own terminal, since Lua
--- can't list a folder.
+-- The names in the outbox that match PATTERN, read through the caller's own
+-- terminal, since Lua can't list a folder. A capture in PATTERN is returned.
 local here
-local function ids()
+local function names(pattern)
   if not here then here = { lib.me() } end
   local r = lib.call("block.method", { session_id = here[1], block_id = here[2], method = "list_dir",
     args = { path = mail.dir(), files = true, limit = 10000 } })
   local out = {}
   for _, entry in ipairs(r.entries or {}) do
-    local id = entry.name:match("^(%d+%-%a%a%a%a)%.json$")
-    if id then out[#out + 1] = id end
+    local name = entry.name:match(pattern)
+    if name then out[#out + 1] = name end
   end
   return out
 end
@@ -70,20 +75,42 @@ end
 -- The fields every queued message has.
 local required = { "id", "posted", "seq", "to", "from", "head", "tail", "text" }
 
--- The queue, oldest first. FILTER may name { block, host } to list only the
--- messages to one receiver. A file missing a field is an error naming it.
+-- The message in a queued file's TEXT, or nil and why it isn't one.
+local function parse(text)
+  local ok, msg = pcall(rex.json.decode, text)
+  if not ok or type(msg) ~= "table" then return nil, "isn't JSON" .. (ok and "" or " (" .. tostring(msg) .. ")") end
+  for _, k in ipairs(required) do
+    if msg[k] == nil then return nil, "has no " .. k end
+  end
+  return msg
+end
+
+-- The queue, oldest first, and the files that aren't messages, as
+-- { file, why }. FILTER may name { block, host } to list only the messages
+-- to one receiver. The postman sets a broken file aside; see postman.lua.
 function mail.list(filter)
-  local out = {}
-  for _, id in ipairs(ids()) do
+  local out, bad = {}, {}
+  for _, id in ipairs(names("^(%d+%-%a%a%a%a)%.json$")) do
     local f = io.open(mail.file(id))
-    local msg = f and rex.json.decode(f:read("*a"))
-    if f then f:close() end
-    for _, k in ipairs(msg and required or {}) do
-      if msg[k] == nil then error(mail.file(id) .. " has no " .. k .. "; delete it to drop that message", 0) end
+    if f then
+      local text = f:read("*a")
+      f:close()
+      local msg, why = parse(text)
+      if not msg then
+        bad[#bad + 1] = { file = mail.file(id), why = why }
+      elseif not filter or (msg.to.block == filter.block and msg.to.host == filter.host) then
+        out[#out + 1] = msg
+      end
     end
-    if msg and (not filter or (msg.to.block == filter.block and msg.to.host == filter.host)) then out[#out + 1] = msg end
   end
   table.sort(out, mail.before)
+  return out, bad
+end
+
+-- The files the postman set aside as broken, <id>.json.bad.
+function mail.broken()
+  local out = {}
+  for _, name in ipairs(names("^%d+%-%a%a%a%a%.json%.bad$")) do out[#out + 1] = lib.path("outbox", name) end
   return out
 end
 
@@ -133,6 +160,7 @@ function mail.post(o)
     assert(o[k] == nil or (type(o[k]) == "number" and o[k] > 0), k .. " must be a positive number")
   end
   assert(not (o.at and o.every), "use at or every, not both")
+  assert(not o.every or o.every >= mail.min_every, "every must be at least " .. mail.min_every .. " seconds")
 
   local session, block = lib.target(host, to)
   local from_session, from_block = lib.me()

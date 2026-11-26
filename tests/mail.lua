@@ -170,7 +170,11 @@ for _, row in ipairs({
   { "a missing file", { to = "Helper", text = "hi", files = { "a.md", "gone.md" } }, "file gone.md: missing" },
   { "a zero interval", { to = "Helper", text = "hi", every = 0 }, "every must be a positive number" },
   { "a negative time", { to = "Helper", text = "hi", at = -5 }, "at must be a positive number" },
-  { "both at and every", { to = "Helper", text = "hi", at = 5, every = 5 }, "use at or every, not both" },
+  { "both at and every", { to = "Helper", text = "hi", at = 5, every = 15 }, "use at or every, not both" },
+  -- Delivery takes about 2 s; a shorter interval would lose ticks.
+  { "a 0.3-second interval", { to = "Helper", text = "hi", every = 0.3 }, "every must be at least 10 seconds" },
+  { "a 1.5-second interval", { to = "Helper", text = "hi", every = 1.5 }, "every must be at least 10 seconds" },
+  { "a 9.9-second interval", { to = "Helper", text = "hi", every = 9.9 }, "every must be at least 10 seconds" },
   { "two files with one name to another host", { to = "Builder", host = "ws", text = "hi", files = { "a.md", "x/a.md" } }, "two files are named a.md" },
 }) do
   trial("refused before anything is queued: " .. row[1], function() fails(row[3], row[2]) end)
@@ -200,9 +204,13 @@ trial("an alarm to yourself is headed as one, with its time", function()
 end)
 trial("a recurring alarm stores its interval exactly, and starts now", function()
   local before = os.time()
-  mail.post({ to = "Helper", text = "tick", every = 0.5 })
+  mail.post({ to = "Helper", text = "tick", every = 10.5 })
   local msg = only()
-  assert(msg.every == 0.5 and msg.start >= before and msg.start <= os.time() and msg.head == "[from Chief")
+  assert(msg.every == 10.5 and msg.start >= before and msg.start <= os.time() and msg.head == "[from Chief")
+end)
+trial("the shortest interval, 10 seconds, is taken", function()
+  mail.post({ to = "Helper", text = "tick", every = 10 })
+  assert(only().every == 10)
 end)
 trial("hint=true asks the postman whether it's trusted", function()
   local _, _, hint = mail.post({ to = "Helper", text = "x", hint = true })
@@ -229,12 +237,43 @@ trial("list reads the queue oldest first, and filters by receiver", function()
   assert(#all == 2 and all[1].id == "100-aaaa" and all[2].id == "200-bbbb")
   local one = here({ block = "block:far", host = "ws" })
   assert(#one == 1 and one[1].id == "100-aaaa")
-  -- Every field is required: a file without one is an error that names it.
+  -- Every field is required: a file without one, or that isn't JSON, is
+  -- left out and named with why, and the rest are still listed.
   local bare = full({ id = "200-bbbb", posted = 200, to = { block = "block:peer" } })
   bare.seq = nil
   mail.write(bare)
-  local ok, err = pcall(here)
-  assert(not ok and tostring(err):find("200-bbbb.json has no seq", 1, true), tostring(err))
+  lib.write(root .. "/outbox/100-aaaa.json", "{ not json")
+  local good, bad = here()
+  assert(#good == 0 and #bad == 2, #good .. " " .. #bad)
+  table.sort(bad, function(a, b) return a.file < b.file end)
+  assert(bad[1].file == root .. "/outbox/100-aaaa.json" and bad[1].why:find("isn't JSON", 1, true), bad[1].why)
+  assert(bad[2].file == root .. "/outbox/200-bbbb.json" and bad[2].why == "has no seq", bad[2].why)
+end)
+trial("a broken file in the outbox doesn't stop a send", function()
+  os.execute("mkdir -p " .. quote(root .. "/outbox"))
+  lib.write(root .. "/outbox/100-aaaa.json", json.encode({ id = "100-aaaa", posted = 100 }))
+  local plain = rex.call
+  rex.call = function(method, args)
+    if method == "block.method" and args.method == "list_dir" and args.args.files then
+      local entries = {}
+      for _, name in ipairs(outbox_files()) do entries[#entries + 1] = { name = name } end
+      return { status = "ok", entries = entries }
+    end
+    return plain(method, args)
+  end
+  local id = mail.post({ to = "Helper", text = "hi" })
+  assert(io.open(root .. "/outbox/" .. id .. ".json"), "not queued")
+end)
+trial("broken lists the files the postman set aside", function()
+  local plain = rex.call
+  rex.call = function(method, args)
+    if method == "block.method" and args.method == "list_dir" then
+      return { status = "ok", entries = { { name = "100-aaaa.json.bad" }, { name = "200-bbbb.json" }, { name = "x.bad" } } }
+    end
+    return plain(method, args)
+  end
+  local b = mail.broken()
+  assert(#b == 1 and b[1] == root .. "/outbox/100-aaaa.json.bad", table.concat(b, " "))
 end)
 trial("a write of a file someone deleted doesn't bring it back", function()
   os.execute("mkdir -p " .. quote(root .. "/outbox"))

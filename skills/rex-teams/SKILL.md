@@ -77,7 +77,7 @@ Use the retained worktree as `cwd` when resuming work that needs its changes. Th
 
 Your teammates are the other labeled tabs and panes in your session, except tabs prefixed with a possibly indented `↳`, which are subagents. The user may also tell you about teammates elsewhere.
 
-List your team, then message a teammate by running the command printed next to its name, with your message in place of `<message>`. The command targets the teammate's block ID, because labels can change or repeat and IDs don't. `team.lua` also says how many messages, from anyone, still wait for each agent and why, and how many the postman gave up on. An alarm counts once it's due; the postman's notices don't count.
+List your team, then message a teammate by running the command printed next to its name, with your message in place of `<message>`. The command targets the teammate's block ID, because labels can change or repeat and IDs don't. `team.lua` also says how many messages, from anyone, still wait for each agent and why, and how many the postman gave up on. Last, it names any broken message files the postman set aside; those weren't delivered. An alarm counts once it's due; the postman's notices don't count.
 
 ```sh
 rex do <skill>/scripts/team.lua
@@ -115,7 +115,7 @@ Short IDs that look like numbers (e.g. `77e564`, `123456`) get mangled by `rex d
 rex do <skill>/scripts/alarm.lua in=1200 message="Check in on the Marketer agent"
 ```
 
-Use `in=SECONDS` once or `every=SECONDS` to repeat. The target defaults to you; pass `block=` to target another agent. An alarm is a queued message, so it arrives once the agent's prompt box is free. A recurring alarm skips the ticks that come while the last one still waits. Then **end your turn**.
+Use `in=SECONDS` once or `every=SECONDS` to repeat. The target defaults to you; pass `block=` to target another agent. An alarm is a queued message, so it arrives once the agent's prompt box is free. `every=` is at least 10 seconds. If the agent's prompt box holds a draft past the next tick, the waiting tick goes out once the box is clear, and the ticks due meanwhile are skipped. Then **end your turn**.
 
 Keep the message to a short note to yourself, since you'll still have the conversation. Give a recurring alarm a stop condition, such as "check CI, and cancel this alarm once it's green".
 

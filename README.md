@@ -53,6 +53,7 @@ Open agents in labeled tabs or panes, then talk to one:
 - A busy agent gets a message mid-turn. Its CLI decides what to do with it.
 - An agent that asks you something in plain text, rather than in a dialog, can get a message while it waits for your answer.
 - The postman runs in a session labelled `rex-teams`. It comes back after a Rex restart only once you add the trust rule the scripts print; otherwise the next message starts it, and alarms wait until then. On Windows it doesn't come back.
+- A recurring alarm repeats every 10 seconds at the most often.
 - A subagent that crashes before reporting wakes nobody.
 - Messages are one-way. A reply across hosts works only if the receiver's `rex hosts` can reach the sender's host.
 - `spawn.lua` starts subagents only on your own host. You can message agents on other hosts and send them files, but not start them there yet ([#37](https://github.com/campfireshuffle/rex-teams/issues/37)).

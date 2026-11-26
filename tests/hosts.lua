@@ -341,6 +341,28 @@ check("team.lua counts every sender's messages, and says a sender was told only 
   all = table.concat(printed, "\n")
   assert(has(all, "  (2 messages it sent itself not delivered)"), all)
 end)
+check("team.lua counts the broken files the postman set aside", function()
+  reset()
+  load()
+  local plain = servers[""].call
+  local entries = { { name = "100-aaaa.json.bad" } }
+  rex.call = function(method, args)
+    if method == "block.method" and args.method == "list_dir" then return { status = "ok", entries = entries } end
+    return plain(method, args)
+  end
+  assert(run("team.lua", {}))
+  local all = table.concat(printed, "\n")
+  assert(has(all, "(1 broken message set aside, not delivered: " .. tmp .. "/outbox/100-aaaa.json.bad)"), all)
+  entries[2] = { name = "101-bbbb.json.bad" }
+  printed = {}
+  assert(run("team.lua", {}))
+  all = table.concat(printed, "\n")
+  assert(has(all, "(2 broken messages set aside, not delivered: " .. tmp .. "/outbox/100-aaaa.json.bad, "), all)
+  entries = {}
+  printed = {}
+  assert(run("team.lua", {}))
+  assert(not has(table.concat(printed, "\n"), "broken"))
+end)
 check("two sends in one second are listed, and so delivered, in the order they were sent", function()
   reset()
   local plain = servers[""].call

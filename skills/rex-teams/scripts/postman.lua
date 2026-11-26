@@ -53,14 +53,23 @@ local function give_up(msg, why, text)
   return notice(msg, why, text)
 end
 
--- Hold message MSG, in delivery state D, because of WHY, look again
--- shortly, and tell its sender once if it's held for long.
+-- When the sender of MSG, held since msg.held_since, hears that it's held,
+-- or nil if it never will. It hears once, M.held_notice in. Time held at
+-- the front of its queue and time behind another on its way add up.
+local function notice_at(msg)
+  if msg.noticed or msg.notice or self_addressed(msg) then return nil end
+  return msg.held_since + M.held_notice
+end
+
+-- Hold message MSG, in delivery state D, because of WHY, and look again
+-- shortly.
 local function hold(msg, d, why, now)
-  d.held_since, d.why = d.held_since or now, why
-  if not d.noticed and now - d.held_since >= M.held_notice and not (msg.notice or self_addressed(msg)) then
-    d.noticed = true
+  msg.held_since, d.why = msg.held_since or now, why
+  local at = notice_at(msg)
+  if at and now >= at then
+    msg.noticed = true
     return notice(msg, "held", "Message " .. msg.id .. " to " .. msg.to.name .. " has waited "
-      .. math.floor((now - d.held_since) / 60) .. " minutes: " .. why .. ". It goes out once that clears. To drop it, delete "
+      .. math.floor((now - msg.held_since) / 60) .. " minutes: " .. why .. ". It goes out once that clears. To drop it, delete "
       .. mail.file(msg.id) .. ".")
   end
   return { kind = "hold", why = why, at = now + M.poll }
@@ -140,7 +149,7 @@ function M.step(msg, look, now)
   local why = M.why(look)
   if why then return hold(msg, d, why, now) end
   if msg.files and #msg.files > 0 and not d.attached then return { kind = "attach" } end
-  d.held_since, d.why = nil, nil
+  msg.held_since, msg.noticed, d.why = nil, nil, nil
   d.pasted_at, d.known = now, look.known
   d.text = msg.head .. " · msg " .. d.tag .. msg.tail .. msg.text .. (d.note or "")
   return { kind = "put", text = d.text }
@@ -327,7 +336,15 @@ function M.run()
 
   local function load()
     local seen = {}
-    for _, msg in ipairs(mail.list()) do
+    local list, bad = mail.list()
+    -- A broken file can't be delivered, nor its sender told: set it aside,
+    -- once, and say so here. team.lua counts it.
+    for _, b in ipairs(bad) do
+      if os.rename(b.file, b.file .. ".bad") then
+        print("postman: " .. b.file .. " " .. b.why .. ", so it can't be delivered; set aside as " .. b.file .. ".bad")
+      end
+    end
+    for _, msg in ipairs(list) do
       seen[msg.id] = true
       if not msgs[msg.id] then
         -- A one-shot already late when this postman starts was due while
@@ -369,15 +386,11 @@ function M.run()
     return now
   end
 
+  -- Do what step says, until it says to wait.
   local function serve(msg)
     local look
-    for _ = 1, 8 do
-      local fresh = not msg.d
+    while true do
       local a = M.step(msg, look, clock(msg))
-      -- Time spent queued behind another message counts as held.
-      if fresh and msg.d and msg.behind then
-        msg.d.held_since, msg.d.noticed, msg.behind = msg.behind.since, msg.behind.noticed, nil
-      end
       local now = os.time()
       if a.kind == "look" then
         -- A pane Rex can't reach is held, and its sender hears after a while.
@@ -424,22 +437,21 @@ function M.run()
   end
 
   -- MSG is due but waits behind FRONT, which is on its way. That counts as
-  -- held: its sender hears once, after M.held_notice. Returns when to look
-  -- again, or nil.
+  -- held; see notice_at. Returns when to look again, or nil.
   local function behind(msg, front, now)
     local due = msg.every and (msg.due or msg.start + msg.every) or msg.at or msg.posted
     if now < due then return nil end
-    if not msg.behind then
-      msg.behind = { since = now }
+    if not msg.held_since then
+      msg.held_since = now
       save(msg)
     end
-    if msg.behind.noticed or msg.notice or self_addressed(msg) then return nil end
-    if now - msg.behind.since < M.held_notice then return msg.behind.since + M.held_notice end
-    msg.behind.noticed = true
+    local at = notice_at(msg)
+    if not at or now < at then return at end
+    msg.noticed = true
     save(msg)
     if not msgs[msg.id] then return nil end
     mail.notice(msg.from, "Message " .. msg.id .. " to " .. msg.to.name .. " has waited "
-      .. math.floor((now - msg.behind.since) / 60) .. " minutes behind message " .. front.id .. ": "
+      .. math.floor((now - msg.held_since) / 60) .. " minutes behind message " .. front.id .. ": "
       .. (front.d.why or "that one is still on its way") .. ". It goes out once that clears. To drop it, delete "
       .. mail.file(msg.id) .. ".")
     load()

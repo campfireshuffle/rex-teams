@@ -70,7 +70,7 @@ for _, row in ipairs({
     if l.composer == false then l.composer = nil end
     local m = msg()
     is(step(m, l, 100), "hold", { why = row[3], at = 100 + P.poll })
-    assert(m.d.why == row[3] and m.d.held_since == 100)
+    assert(m.d.why == row[3] and m.held_since == 100)
   end)
 end
 trial("after the paste, one look at the prompt box, 2 s later", function()

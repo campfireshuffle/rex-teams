@@ -345,6 +345,37 @@ trial("a dead message doesn't hold up the ones behind it", function()
   run_to(S.t + 5)
   assert(#r.puts == 1 and r.puts[1].text:find("bbbb", 1, true) and #queued() == 1)
 end)
+trial("a broken file is set aside once and named, and the rest still go", function()
+  local r = receiver("block:to")
+  queue({ id = "1795671000-good" })
+  local bad = queue({ id = "1795671000-badd", to = "block:other" })
+  bad.head = nil
+  mail.write(bad)
+  start()
+  run_to(S.t + 10)
+  assert(#r.puts == 1 and #r.delivered == 1, "valid message pasted " .. #r.puts .. " times; " .. table.concat(S.printed, " | "))
+  local file = root .. "/outbox/1795671000-badd.json"
+  local said = 0
+  for _, line in ipairs(S.printed) do
+    if line == "postman: " .. file .. " has no head, so it can't be delivered; set aside as " .. file .. ".bad" then said = said + 1 end
+  end
+  assert(said == 1, table.concat(S.printed, " | "))
+  assert(io.open(file .. ".bad") and not io.open(file), "not set aside")
+end)
+trial("serve follows the policy until it waits, however many steps that takes", function()
+  local r = receiver("block:to")
+  queue({})
+  local step, looks = P.step, 0
+  -- A policy that looks a dozen times before it pastes.
+  P.step = function(msg, look, now)
+    if looks < 12 then looks = looks + 1 return { kind = "look" } end
+    return step(msg, look, now)
+  end
+  local ok, err = pcall(start)
+  P.step = step
+  assert(ok, err)
+  assert(#r.puts == 1, "not pasted in the first pass")
+end)
 trial("the attempt is recorded before the paste", function()
   local r = receiver("block:to")
   queue({})
@@ -533,7 +564,8 @@ trial("a recurring alarm skips the ticks it missed during a sleep", function()
   end
 end)
 trial("fractional recurring alarms fire on their phase, never early or twice", function()
-  for _, every in ipairs({ 2.5, 3.3 }) do
+  -- mail.post takes 10 s and up; the postman keeps phase below that too.
+  for _, every in ipairs({ 2.5, 3.3, 10.5 }) do
     reset()
     local me = receiver("block:me")
     S.t, S.now = 1795671000.7, 1795671000
@@ -541,7 +573,7 @@ trial("fractional recurring alarms fire on their phase, never early or twice", f
     S.t = 1795671000.9
     start()
     local k = 0
-    for _ = 1, 2000 do
+    for _ = 1, 4000 do
       run_to(S.t + 0.05)
       if #me.puts >= 12 then break end
     end
@@ -582,6 +614,18 @@ trial("a recurring tick is pasted while slow looks of other receivers delay it",
     assert(p.t >= 1795671000 + 5 * tick, "early")
   end
   assert(#me.puts >= due - 1, #me.puts .. " of " .. due .. " ticks")
+end)
+trial("a recurring alarm held past its next tick sends the held tick once it clears, and skips the ones between", function()
+  local me = receiver("block:me", { draft = "typing" })
+  alarm({ every = 10 })
+  start()
+  run_to(S.t + 35)
+  assert(#me.puts == 0, "pasted onto a draft")
+  me.draft = nil
+  run_to(S.t + 3)
+  assert(#me.puts == 1 and me.puts[1].text:find("msg 1795671000-abcd.1]", 1, true), me.puts[1] and me.puts[1].text)
+  run_to(1795671045)
+  assert(#me.puts == 2 and me.puts[2].t == 1795671040 and me.puts[2].text:find("msg 1795671000-abcd.4]", 1, true), me.puts[2] and me.puts[2].text)
 end)
 trial("a one-shot claims a restart only when it starts at least 1s late", function()
   local me = receiver("block:me")

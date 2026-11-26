@@ -28,9 +28,9 @@ send.lua  alarm.lua  team.lua  spawn.lua        entry points: parse arguments, p
 |---|---|
 | `send.lua` | `mail.post` for a message; prints `queued message <id> for <name>`. |
 | `alarm.lua` | `mail.post` with `at` or `every`; `list=true` lists your alarms. |
-| `team.lua` | Lists agents with ready `send.lua` commands, and how many messages wait for each. |
+| `team.lua` | Lists agents with ready `send.lua` commands, how many messages wait for each, and the broken files set aside. |
 | `spawn.lua` | Starts a subagent. Its report is a `send.lua` command, so it's an ordinary message. |
-| `mail.lua` | `mail.post{to, host?, text, files?, at?, every?} -> id, name, hint` and `mail.list`. Raises before queueing on bad input. |
+| `mail.lua` | `mail.post{to, host?, text, files?, at?, every?} -> id, name, hint`, `mail.list() -> messages, broken` and `mail.broken()`. Raises before queueing on bad input, including `every` under 10 s. |
 | `postman.lua` | `step(msg, look, now) -> action`, the pure delivery policy; `ensure()`, which starts the postman; and the worker loop. |
 | `pane.lua` | `look(addr)`, `put(addr, text)`, `enter(addr)`, `attach(addr, files, id)`. |
 | `vendors.lua` | The only file that names a CLI: each one's composer parser, placeholder rule and paste-token patterns. |
@@ -75,7 +75,9 @@ notices, and alarms you set yourself, never cause notices
 alarm.lua ─► mail.post{at=…} or {every=…} ─► outbox
 postman: timer to the due time ─► deliver as above
 one-shot due while the postman was down ─► "[late by Ns, Rex restarted]"
-recurring: tick k at start + k·every; a tick missed while the postman was down or the machine slept, or 1 s late while the last is still on its way, is skipped
+recurring: every ≥ 10 s (delivery takes about 2 s); tick k at start + k·every
+a tick missed while the postman was down or the machine slept is skipped
+a tick held (a draft) past the next one: the held tick goes out once the box clears; the ticks due meanwhile are skipped
 ```
 
 **Spawn and report**
@@ -95,6 +97,7 @@ postman here ─ rex.server("ws") ─► look, put, enter on ws; rex cp the file
 | Path | What |
 |---|---|
 | `/tmp/rex-teams/outbox/<id>.json` | A queued message and its delivery state. The postman rewrites it after each step and deletes it once delivered. Delete it to drop a message or cancel an alarm. A message whose receiver is gone, or whose files couldn't be copied, stays, marked `dead`. |
+| `/tmp/rex-teams/outbox/<id>.json.bad` | A queued file that isn't a message (not JSON, or a field missing). The postman renames it once, says why in its own block, and never delivers it. `team.lua` lists it. |
 | `/tmp/rex-teams/postman.json` | The running postman: its block, session and pid. |
 | `/tmp/rex-teams/postman.lock` | A `mkdir` lock while a postman claims `postman.json`. |
 | `/tmp/rex-teams/stage/<id>/` | Files on their way to another host, removed after the copy. |

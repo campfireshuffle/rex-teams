@@ -147,7 +147,9 @@ trial("a CLI without an app is found by its process name", function()
 end)
 trial("the app comes from the root status record, not a child's", function()
   local b = fixture("empty@opencode")
-  b.records = { { app = "aider", id = "task/1", state = "working" }, { app = "opencode", state = "idle" } }
+  -- Children before and after the root, so neither first nor last wins.
+  b.records = { { app = "aider", id = "task/1", state = "working" }, { app = "opencode", state = "idle" },
+    { app = "aider", id = "task/2", state = "idle" } }
   reset({ ["b:1"] = b })
   assert(pane.look({ session = "s:1", block = "b:1" }).app == "opencode")
 end)

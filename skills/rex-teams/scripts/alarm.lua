@@ -6,7 +6,9 @@
 --
 -- The target defaults to the calling agent. An alarm is a queued message
 -- with a time; the postman delivers it, as it does every message, once the
--- agent's prompt box is free. A recurring alarm skips the ticks it misses.
+-- agent's prompt box is free. EVERY is at least 10 seconds; mail.post refuses
+-- less. A tick held past the next one goes out late, and the ticks between
+-- are skipped.
 -- Cancel one by deleting its file, which it prints.
 local dir = debug.getinfo(1, "S").source:gsub("^@", ""):match("^(.*[/\\])")
 local lib = dofile(dir .. "lib.lua")

@@ -114,8 +114,8 @@ trial("a recurring alarm stores its interval and start", function()
   assert(m.every == 60 and m.start == 1795671000 and not m.at)
 end)
 trial("fractional intervals are stored exactly", function()
-  set({ every = 0.5, message = "fast" })
-  assert(queued()[1].every == 0.5)
+  set({ every = 10.5, message = "fast" })
+  assert(queued()[1].every == 10.5)
   reset()
   set({ ["in"] = 1.5, message = "soon" })
   assert(queued()[1].at == 1795671001.5, queued()[1].at)
@@ -137,10 +137,17 @@ trial("a message with a newline is refused before anything exists", function()
 end)
 trial("a bad interval is refused before anything exists", function()
   for _, args in ipairs({ { message = "x" }, { ["in"] = 0, message = "x" }, { ["in"] = -5, message = "x" },
-    { ["in"] = 5, every = 5, message = "x" }, { ["in"] = "soon", message = "x" } }) do
+    { ["in"] = 5, every = 15, message = "x" }, { ["in"] = "soon", message = "x" } }) do
     reset()
     local ok = pcall(set, args)
     assert(not ok and #queued() == 0 and #S.calls == 0)
+  end
+end)
+trial("an interval under 10 seconds is refused, saying so", function()
+  -- Delivery takes about 2 s, so shorter ticks would be lost.
+  for _, every in ipairs({ 0.3, 1.5, 9.9 }) do
+    reset()
+    fails("every must be at least 10 seconds", function() set({ every = every, message = "fast" }) end)
   end
 end)
 trial("a missing sha256sum stops the setter before anything exists", function()
