@@ -567,7 +567,12 @@ end)
 trial("no rule: the hint gives the rule for the scripts folder", function()
   S.records = { { chosen = true, untrusted_reason = "no_rule" } }
   local hint = ensure()
-  assert(hint == "postman: queued messages and alarms won't survive a Rex restart. To keep them, add this to Rex's init.lua and run rex config reload: " .. rule, hint)
+  assert(hint == "postman: Rex won't start the postman again after a restart. Queued messages and alarms are kept, and go out once the next message starts it. To have Rex start it, add this to Rex's init.lua and run rex config reload: " .. rule, hint)
+  -- SKILL.md tells agents what to do when they see this hint, by its opening.
+  local f = assert(io.open("skills/rex-teams/SKILL.md"))
+  local skill = f:read("*a")
+  f:close()
+  assert(skill:find("prints that Rex won't start the postman again after a restart", 1, true), "SKILL.md doesn't name the hint")
 end)
 trial("another reason is named in the hint", function()
   S.records = { { chosen = true, untrusted_reason = "flags_differ" } }

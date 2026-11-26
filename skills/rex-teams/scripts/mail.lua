@@ -3,11 +3,11 @@
 --
 --   mail.post{ to, host?, text, files?, at?, every? } -> id, name, hint
 --
--- post checks everything first and raises if anything is wrong, so a message
--- is either queued or refused. It resolves TO (a block ID, short ID or label
--- on HOST, a label from `rex hosts`) once, writes the message to
--- /tmp/rex-teams/outbox/<id>.json, makes sure this host's postman is
--- running, and returns at once. NAME is the receiver's name. HINT is the
+-- post checks everything first and raises if anything is wrong. It resolves
+-- TO (a block ID, short ID or label on HOST, a label from `rex hosts`) once,
+-- makes sure this host's postman is running, then writes the message to
+-- /tmp/rex-teams/outbox/<id>.json and returns at once. When post raises,
+-- nothing is queued, so sending again doesn't double the message. NAME is the receiver's name. HINT is the
 -- trust-rule hint, set when post started a postman Rex wouldn't resume, or
 -- with HINT=true whenever the running postman isn't trusted.
 -- The postman delivers it; see postman.lua. Delete the file to drop the
@@ -73,11 +73,13 @@ function mail.list(filter)
   return out
 end
 
--- Queue MSG, then wake the postman.
+-- Wake the postman, then queue MSG. The postman reads the outbox every few
+-- seconds, so it finds MSG; a postman that won't start leaves nothing queued.
 local function queue(msg, hint)
+  hint = dofile(dir .. "postman.lua").ensure(hint)
   lib.mkdir(mail.dir())
   mail.write(msg)
-  return dofile(dir .. "postman.lua").ensure(hint)
+  return hint
 end
 
 -- A note from the postman to FROM, the sender of a message it's handling.

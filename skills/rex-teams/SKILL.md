@@ -121,7 +121,7 @@ Keep the message to a short note to yourself, since you'll still have the conver
 
 `alarm.lua` prints the alarm's id and the `rm` command that cancels it. List your alarms with `rex do <skill>/scripts/alarm.lua list=true`.
 
-If a script prints that queued messages and alarms won't survive a Rex restart, pass its `rex.set(…)` line to the user once. Don't edit their Rex config. With the rule, the postman comes back after a restart, a one-shot that was due meanwhile arrives marked `[late by Ns, Rex restarted]`, and recurring alarms skip missed ticks. Without it, the postman starts again with the next message. If a script prints that the postman didn't start, tell the user what it says.
+If a script prints that Rex won't start the postman again after a restart, pass its `rex.set(…)` line to the user once. Don't edit their Rex config. With the rule, the postman comes back after a restart, a one-shot that was due meanwhile arrives marked `[late by Ns, Rex restarted]`, and recurring alarms skip missed ticks. Without it, queued messages and alarms are kept, and wait until the next message starts the postman. If a script prints that the postman didn't start, nothing was queued; tell the user what it says, and send again once it's fixed.
 
 ## Rules
 

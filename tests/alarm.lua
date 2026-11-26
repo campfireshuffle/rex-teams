@@ -127,7 +127,7 @@ trial("an alarm for another agent has the normal header", function()
   assert(S.printed[1]:find(" for Marketer. ", 1, true), S.printed[1])
 end)
 trial("the trust hint is printed when the postman isn't trusted", function()
-  S.hint = "postman: queued messages and alarms won't survive a Rex restart. …"
+  S.hint = "postman: Rex won't start the postman again after a restart. …"
   set({ ["in"] = 5, message = "x" })
   assert(S.printed[2] == S.hint, tostring(S.printed[2]))
 end)

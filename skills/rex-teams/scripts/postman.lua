@@ -227,9 +227,10 @@ local function resume_hint(session, block)
   if not record then
     return "postman: Rex has no resume record for the postman after 5s. See why with: rex capture -b " .. block
   elseif not record.trusted then
-    return "postman: queued messages and alarms won't survive a Rex restart"
+    return "postman: Rex won't start the postman again after a restart"
       .. (record.untrusted_reason == "no_rule" and "" or " (" .. tostring(record.untrusted_reason) .. ")")
-      .. ". To keep them, add this to Rex's init.lua and run rex config reload: " .. M.rule()
+      .. ". Queued messages and alarms are kept, and go out once the next message starts it."
+      .. " To have Rex start it, add this to Rex's init.lua and run rex config reload: " .. M.rule()
   end
 end
 
