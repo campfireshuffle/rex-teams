@@ -233,6 +233,21 @@ trial("a recurring alarm keeps its phase and skips missed ticks", function()
   assert(state.timers[3].s == 59, tostring(state.timers[3].s))
 end)
 
+trial("a recurring alarm skips the ticks it missed during a sleep", function()
+  for _, wake in ipairs({ 660, 650 }) do
+    reset()
+    set({ every = 60, message = "tick" })
+    worker()
+    state.now = state.now + wake -- the first timer, due at +60, runs after a sleep
+    state.timers[1].f()
+    while #state.timers < 20 and state.timers[#state.timers].s == 0 do state.timers[#state.timers].f() end
+    local pastes = count("block.event") / 3
+    assert(pastes <= 1, wake .. ": " .. pastes .. " pastes after the sleep")
+    local s = state.timers[#state.timers].s
+    assert(s == 60 - (state.now - 1795671000) % 60, wake .. ": next in " .. s .. ", off phase")
+  end
+end)
+
 -- Rex's clock is whole seconds, but its timers run on real time. Run the
 -- alarm's timers on a real clock T, with os.time() = floor(T).
 local function run_real(start, f)

@@ -60,7 +60,7 @@ rex.set("resume.trust.rex-teams-alarm", {
 })
 ```
 
-An alarm's details are its `--args`, so the rule trusts that one script with any arguments. Until you add the rule, setting an alarm prints it with the real path. A one-shot alarm that was due while Rex was down fires once when Rex is back, marked `[late by Ns, Rex restarted]`. A recurring alarm skips the ticks it missed.
+An alarm's details are its `--args`, so the rule trusts that one script with any arguments. Until you add the rule, setting an alarm prints it with the real path. A one-shot alarm that was due while Rex was down fires once when Rex is back, marked `[late by Ns, Rex restarted]`. A recurring alarm skips the ticks it missed, and does the same after the computer sleeps.
 
 ## Limitations
 

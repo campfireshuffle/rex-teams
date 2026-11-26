@@ -59,16 +59,20 @@ if a.worker then
       rex.stop(0)
     end)
   else
-    -- Tick k falls at start + k*every. Ticks missed while Rex was down are
-    -- skipped. os.time() is whole seconds, so count ticks rather than work
-    -- the next one out from the clock: a tick may be up to 1s late, never
-    -- early or twice.
-    local k = math.floor((os.time() - a.start) / a.every) + 1
+    -- Tick k falls at start + k*every. os.time() is whole seconds, so a tick
+    -- may be up to 1s late, never early or twice. Ticks missed while Rex was
+    -- down or the machine slept are skipped: k jumps to the next tick due,
+    -- and a timer that runs 1s or more late doesn't fire.
+    local k = 0
     local function next_tick()
-      local wait = math.max(0, a.start + k * a.every - os.time())
-      k = k + 1
+      k = math.max(k + 1, math.floor((os.time() - 1 - a.start) / a.every) + 1)
+      local due = a.start + k * a.every
+      local wait = math.max(0, due - os.time())
       print("alarm: next at " .. os.date("%H:%M:%S", os.time() + wait))
-      rex.after(wait, function() fire("") next_tick() end)
+      rex.after(wait, function()
+        if os.time() - due < 1 then fire("") end
+        next_tick()
+      end)
     end
     next_tick()
   end
