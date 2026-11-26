@@ -16,12 +16,23 @@ for _, name in ipairs({ "a.md", "b.md", odd, "dir/sub/c.txt" }) do
   f:write(name)
   f:close()
 end
+-- Links to attach, and one inside dir that must stay a link.
+sh("ln -s " .. quote(src .. "/a.md") .. " " .. quote(src .. "/link.md"))
+sh("ln -s " .. quote(src .. "/dir") .. " " .. quote(src .. "/linkdir"))
+sh("ln -s c.txt " .. quote(src .. "/dir/sub/inner"))
 
-local calls, pasted, execs, rex_cps, remote_root, cp_result
+local calls, pasted, events, execs, rex_cps, remote_root, cp_result
 
 -- What the stage held when `rex cp` ran, relative to the stage folder.
 local function tree(dir)
   local p = io.popen("cd " .. quote(dir) .. " && find . | LC_ALL=C sort")
+  local out = {}
+  for line in p:lines() do out[#out + 1] = line end
+  p:close()
+  return table.concat(out, "\n")
+end
+local function links(dir)
+  local p = io.popen("cd " .. quote(dir) .. " && find . -type l | LC_ALL=C sort")
   local out = {}
   for line in p:lines() do out[#out + 1] = line end
   p:close()
@@ -49,9 +60,10 @@ local function server(name, blocks, list_dir)
     end
     if method == "block.method" then
       assert(args.method == "list_dir")
-      return list_dir(args.block_id, args.args.path)
+      return list_dir(args.block_id, args.args)
     end
     if method == "block.event" then
+      events[#events + 1] = { server = name, session = args.session_id, block = args.block_id, type = args.event.type }
       if args.event.type == "paste" then pasted[#pasted + 1] = { server = name, text = args.event.payload.text } end
       return {}
     end
@@ -61,28 +73,46 @@ local function server(name, blocks, list_dir)
 end
 
 -- The caller's terminal sits in SRC, like Rex's list_dir resolving a path.
-local function local_dir(block, path)
+-- As in Rex, a file anywhere on the path makes it not_dir.
+local function local_dir(block, args)
   assert(block == "block:me-0000-aaaa", "list_dir must ask the caller's terminal")
+  local path = args.path
   local p = path:sub(1, 1) == "/" and path or src .. "/" .. path
   p = p:gsub("/+$", "")
-  if os.execute("test -d " .. quote(p)) == 0 then return { status = "ok", path = p } end
-  if exists(p) then return { status = "not_dir", path = p } end
+  if os.execute("test -d " .. quote(p)) == 0 then
+    if not args.files then return { status = "ok", path = p, entries = {} } end
+    local entries = {}
+    local ls = io.popen("ls -A " .. quote(p))
+    for name in ls:lines() do
+      if not args.prefix or name:lower():sub(1, #args.prefix) == args.prefix:lower() then entries[#entries + 1] = { name = name } end
+    end
+    ls:close()
+    return { status = "ok", path = p, entries = entries, truncated = false }
+  end
+  local up = p
+  while up ~= "" do
+    if os.execute("test -d " .. quote(up)) == 0 then return { status = "missing", path = p } end
+    if exists(up) then return { status = "not_dir", path = p } end
+    up = up:match("^(.*)/[^/]*$")
+  end
   return { status = "missing", path = p }
 end
 
-local function remote_dir(block, path)
+local function remote_dir(block, args)
+  local path = args.path
   assert(path == "/tmp/rex-teams" and block == "block:far-0000-cccc", path)
   return { status = remote_root, path = path }
 end
 
 local function reset()
-  calls, pasted, execs, rex_cps = {}, {}, {}, {}
+  calls, pasted, events, execs, rex_cps = {}, {}, {}, {}, {}
   remote_root, cp_result = "ok", { ok = true, code = 0, stdout = "", stderr = "" }
   sh("rm -rf " .. quote(root))
   local servers = {
     [""] = server("local", {
       { id = "block:me-0000-aaaa", label = "Chief", session = "session:me" },
       { id = "block:peer-0000-bbbb", label = "Helper", session = "session:me" },
+      { id = "block:else-0000-dddd", label = "Other", session = "session:else" },
     }, local_dir),
     ws = server("ws", { { id = "block:far-0000-cccc", label = "Builder", session = "session:far" } }, remote_dir),
   }
@@ -97,7 +127,7 @@ local function reset()
       if argv[1] == "hostname" then return { ok = true, code = 0, stdout = "mac\n" } end
       if argv[1] == "rex" then
         assert(opts and opts.timeout == 600, "rex cp needs a 600 s timeout")
-        rex_cps[#rex_cps + 1] = { argv = argv, tree = tree(root .. "/outbox") }
+        rex_cps[#rex_cps + 1] = { argv = argv, tree = tree(root .. "/outbox"), links = links(root .. "/outbox") }
         return cp_result
       end
       assert(argv[1] == "mkdir" or argv[1] == "cp" or argv[1] == "rm", "unexpected exec: " .. argv[1])
@@ -109,10 +139,11 @@ local function reset()
   }
 end
 
-local function run(args)
+local function run(args, windows)
   rex.args = args
   local lib = real_dofile("skills/rex-teams/scripts/lib.lua")
   lib.root = root
+  if windows then lib.windows = true end
   lib.me = function() return "session:me", "block:me-0000-aaaa" end
   dofile = function(path)
     if path:match("/lib%.lua$") then return lib end
@@ -134,8 +165,8 @@ local function check(name, fn)
 end
 local function has(s, part) return s:find(part, 1, true) ~= nil end
 local function text() return assert(pasted[1], "nothing was pasted").text end
-local function fails(args, want)
-  local ok, err = run(args)
+local function fails(args, want, windows)
+  local ok, err = run(args, windows)
   assert(not ok and has(tostring(err), want), tostring(err))
   assert(#pasted == 0, "a failed send still pasted")
 end
@@ -143,6 +174,15 @@ local function rexes()
   local n = 0
   for _, argv in ipairs(execs) do if argv[1] == "rex" then n = n + 1 end end
   return n
+end
+-- Every paste and key went to SERVER's SESSION and BLOCK: a paste, then Enter.
+local function landed_in(server_name, session, block)
+  assert(#events == 3, "want 3 events, got " .. #events)
+  for i, e in ipairs(events) do
+    assert(e.server == server_name and e.session == session and e.block == block,
+      i .. ": " .. e.type .. " went to " .. e.server .. " " .. tostring(e.session) .. " " .. tostring(e.block))
+  end
+  assert(events[1].type == "paste" and events[2].type == "key" and events[3].type == "key")
 end
 -- The message id in the one rex cp, and the stage it came from.
 local function copied()
@@ -152,12 +192,12 @@ local function copied()
   return argv, id
 end
 
-check("same host: no copy, absolute paths, no delete note", function()
+check("same host: no copy, absolute paths, no remove note", function()
   assert(run({ block = "Helper", message = "see", file = { "a.md", src .. "/dir" } }))
   assert(#execs == 0, "same host ran " .. tostring(execs[1] and execs[1][1]))
   local want = "] see [files: " .. src .. "/a.md, " .. src .. "/dir]"
   assert(text():sub(-#want) == want, text())
-  assert(not has(text(), "delete"))
+  assert(not has(text(), "remove"))
 end)
 check("same host: a single file= string", function()
   assert(run({ block = "Helper", message = "see", file = "b.md" }))
@@ -173,8 +213,8 @@ check("cross-host: one rex cp with host, session, -r, the stage and :/tmp/rex-te
   assert(rex_cps[1].tree == table.concat({ ".", "./" .. id, "./" .. id .. "/inbox", "./" .. id .. "/inbox/far-0000-cccc",
     "./" .. id .. "/inbox/far-0000-cccc/" .. id, "./" .. id .. "/inbox/far-0000-cccc/" .. id .. "/a.md" }, "\n"), rex_cps[1].tree)
   local folder = "/tmp/rex-teams/inbox/far-0000-cccc/" .. id
-  assert(pasted[1].server == "ws")
-  local suffix = "] see [files: " .. folder .. "/a.md; delete " .. folder .. " when done]"
+  landed_in("ws", "session:far", "block:far-0000-cccc")
+  local suffix = "] see [files: " .. folder .. "/a.md; you can remove " .. folder .. " once you've read them]"
   assert(text():sub(-#suffix) == suffix, text())
 end)
 check("cross-host: a list of files and a directory", function()
@@ -185,7 +225,7 @@ check("cross-host: a list of files and a directory", function()
     assert(has(rex_cps[1].tree, stage_box .. p .. "\n") or rex_cps[1].tree:sub(-#(stage_box .. p)) == stage_box .. p, p .. " missing:\n" .. rex_cps[1].tree)
   end
   local folder = "/tmp/rex-teams/inbox/far-0000-cccc/" .. id
-  assert(has(text(), "[files: " .. folder .. "/a.md, " .. folder .. "/b.md, " .. folder .. "/dir; delete " .. folder .. " when done]"), text())
+  assert(has(text(), "[files: " .. folder .. "/a.md, " .. folder .. "/b.md, " .. folder .. "/dir; you can remove " .. folder .. " once you've read them]"), text())
 end)
 check("odd names: spaces, quotes and unicode arrive as one word each", function()
   assert(run({ host = "ws", block = "Builder", message = "see", file = odd }))
@@ -194,7 +234,7 @@ check("odd names: spaces, quotes and unicode arrive as one word each", function(
   for _, argv in ipairs(execs) do
     if argv[1] == "cp" then assert(argv[#argv - 1] == src .. "/" .. odd, argv[#argv - 1]) end
   end
-  assert(has(text(), "/" .. id .. "/" .. odd .. "; delete"), text())
+  assert(has(text(), "/" .. id .. "/" .. odd .. "; you can remove"), text())
 end)
 check("a missing local file: error, nothing copied or sent", function()
   for _, host in ipairs({ false, "ws" }) do
@@ -231,6 +271,36 @@ check("the stage is removed on success and on failure", function()
   fails({ host = "ws", block = "Builder", message = "see", file = "a.md" }, "nope")
   local _, id2 = copied()
   assert(not exists(root .. "/outbox/" .. id2), "stage left after failure")
+end)
+check("messages with files go to the receiver's pane, here and in another session", function()
+  for _, to in ipairs({ { "Helper", "session:me", "block:peer-0000-bbbb" }, { "Other", "session:else", "block:else-0000-dddd" } }) do
+    reset()
+    assert(run({ block = to[1], message = "see", file = "a.md" }))
+    landed_in("local", to[2], to[3])
+  end
+end)
+check("symlinks named in file= go as their targets; links inside a folder stay links", function()
+  assert(run({ host = "ws", block = "Builder", message = "see", file = { "link.md", "linkdir" } }))
+  local _, id = copied()
+  local box = "./" .. id .. "/inbox/far-0000-cccc/" .. id
+  assert(rex_cps[1].links == box .. "/linkdir/sub/inner", "staged links:\n" .. rex_cps[1].links)
+  assert(has(rex_cps[1].tree, box .. "/link.md\n") and has(rex_cps[1].tree, box .. "/linkdir/sub/c.txt"), rex_cps[1].tree)
+  assert(has(text(), "/" .. id .. "/link.md, "), text())
+end)
+check("a path through a file: error, nothing copied or sent", function()
+  for _, host in ipairs({ false, "ws" }) do
+    reset()
+    fails({ host = host or nil, block = host and "Builder" or "Helper", message = "see", file = "a.md/nope" }, "a.md/nope: missing")
+    assert(rexes() == 0 and not exists(root .. "/outbox"))
+  end
+end)
+check("two files with one name: error, nothing copied or sent", function()
+  fails({ host = "ws", block = "Builder", message = "see", file = { "a.md", "dir/../a.md" } }, "two files are named a.md")
+  assert(rexes() == 0 and not exists(root .. "/outbox"))
+end)
+check("a Windows sender can't send files to another host", function()
+  fails({ host = "ws", block = "Builder", message = "see", file = "a.md" }, "doesn't work from Windows yet", true)
+  assert(rexes() == 0)
 end)
 check("Windows without TEMP: lib.lua stops with an error", function()
   local real_config = package.config

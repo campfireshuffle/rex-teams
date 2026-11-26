@@ -126,7 +126,20 @@ function lib.locate(session, block, paths)
   local found = {}
   for _, path in ipairs(paths) do
     local dir = lib.call("block.method", { session_id = session, block_id = block, method = "list_dir", args = { path = path, limit = 1 } })
-    if dir.status ~= "ok" and dir.status ~= "not_dir" then error("file " .. path .. ": " .. dir.status, 0) end
+    -- not_dir is a file, or a path through one, such as a.md/x, so look
+    -- for the name in its parent.
+    if dir.status == "not_dir" then
+      local parent, name = dir.path:match("^(.*)[/\\]([^/\\]+)$")
+      local up = lib.call("block.method", { session_id = session, block_id = block, method = "list_dir",
+        args = { path = parent == "" and "/" or parent:match("^%a:$") and parent .. "\\" or parent, files = true, prefix = name } })
+      local status = up.status == "not_dir" and "missing" or up.status
+      for _, entry in ipairs(up.entries or {}) do
+        if entry.name == name then status = "found" end
+      end
+      if status ~= "found" then error("file " .. path .. ": " .. (status == "ok" and "missing" or status), 0) end
+    elseif dir.status ~= "ok" then
+      error("file " .. path .. ": " .. dir.status, 0)
+    end
     -- The message is one line.
     assert(not dir.path:find("[\r\n]"), "file " .. path .. ": a name with a line break can't go in a message")
     found[#found + 1] = dir.path
@@ -169,13 +182,17 @@ function lib.send_files(host, session, block, files)
   local ok, err = pcall(function()
     local box = table.concat({ stage, "inbox", uuid, id }, "/")
     lib.mkdir(box)
-    local argv = { "cp", "-R" }
+    -- -H copies a link named here as its target; links inside a folder
+    -- stay links, as rex cp copies them.
+    local argv = { "cp", "-RH" }
     for _, file in ipairs(files) do argv[#argv + 1] = file end
     argv[#argv + 1] = box
     local r = rex.exec(argv)
     if not (r and r.ok) then error("can't copy the files to " .. box .. ": " .. (r and r.stderr or ""), 0) end
     local root = lib.call("block.method", { session_id = session, block_id = block, method = "list_dir", args = { path = "/tmp/rex-teams", limit = 1 } }, host).status
     if root == "missing" then
+      -- Without this, rex cp would copy inbox to a missing /tmp/rex-teams
+      -- by renaming it rex-teams, so make /tmp/rex-teams first.
       lib.mkdir(stage .. "/rex-teams")
       rex_cp(host, session, stage .. "/rex-teams", ":/tmp/")
     elseif root ~= "ok" then

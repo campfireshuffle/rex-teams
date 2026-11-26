@@ -15,8 +15,9 @@
 -- file= attaches a file or folder; for several, pass
 -- --args '{"block":…,"message":…,"file":["a","b"]}'. On this host the
 -- message lists their paths. On another host they're copied into
--- /tmp/rex-teams/inbox/<block>/<id>/ there first, and the message says to
--- delete that folder when done. If the copy fails, nothing is sent.
+-- /tmp/rex-teams/inbox/<block>/<id>/ there first, and the message says the
+-- receiver can remove that folder once it has read them. If the copy fails,
+-- nothing is sent.
 local lib = dofile(debug.getinfo(1, "S").source:gsub("^@", ""):match("^(.*[/\\])") .. "lib.lua")
 local a = rex.args
 local usage = "usage: send.lua [host=HOST] block=BLOCK message='MESSAGE' [file=PATH]"
@@ -40,7 +41,7 @@ local header = lib.header(from_session, from_block, host ~= nil)
 lib.attach(session, host)
 if #paths > 0 and host then
   local landed, folder = lib.send_files(host, session, block, paths)
-  message = message .. " [files: " .. table.concat(landed, ", ") .. "; delete " .. folder .. " when done]"
+  message = message .. " [files: " .. table.concat(landed, ", ") .. "; you can remove " .. folder .. " once you've read them]"
 elseif #paths > 0 then
   message = message .. " [files: " .. table.concat(paths, ", ") .. "]"
 end

@@ -54,6 +54,7 @@ Open agents in labeled tabs or panes, then talk to one:
 - A subagent that crashes before reporting wakes nobody.
 - Alarms stop if the Rex server restarts.
 - Messages are one-way. A reply across hosts works only if the receiver's `rex hosts` can reach the sender's host. Subagents start only on this host.
-- Sending files to another host needs a Rex with `rex cp` there.
+- Sending files to another host needs `rex cp` on both hosts, and a receiving Rex not started with `--no-fs`.
+- A Windows sender can't send files to another host yet.
 - Short IDs that look like numbers need `--args` ([#38](https://github.com/campfireshuffle/rex-teams/issues/38)).
 - Tested with Rex 0.1.0-preview.25, Claude Code 2.1.326, Codex CLI 0.172.0, Pi 1.6.0 and OpenCode 2.4.1.
