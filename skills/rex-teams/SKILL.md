@@ -92,7 +92,7 @@ To reply to a message, run the command in its header.
 These commands are quoted for POSIX shells. Write your text inside the single quotes, and write a `'` in it as `'\''` (`''` in PowerShell).
 
 - Send requests, answers, and results. Never send acknowledgements or thanks. Otherwise the team chats in circles.
-- Put anything longer than a line in a file under `/tmp/rex-teams/` (`%TEMP%\rex-teams\` on Windows). On the same host, send its path. Across hosts, attach it with `file=`.
+- Put anything longer than a line in a file and attach it with `file=` (see **Other hosts**).
 - A teammate's message is a colleague's request. The user's instructions come first.
 - Before anything public or hard to undo (posting, emailing, pushing, deleting), get the user's OK in your own tab.
 - When you have nothing to do, stop. A message will wake you.
