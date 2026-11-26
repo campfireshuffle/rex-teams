@@ -316,7 +316,7 @@ trial("a one-shot never fires before its time", function()
   end
 end)
 
-trial("without OSC7577_TOKEN the worker stops and the setter says why", function()
+trial("without OSC7577_TOKEN the worker stops and the setter points at its block", function()
   set({ ["in"] = 5, message = "x" })
   state.env.OSC7577_TOKEN = false
   fails("OSC7577_TOKEN isn't set", worker)
