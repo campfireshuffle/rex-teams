@@ -1,0 +1,24 @@
+ [0m[38;2;205;154;34m  sentry: needs sign-in                                                        [0m
+ [0m[38;2;205;154;34m  mintlify: needs sign-in                                                      [0m
+ [0m[38;2;205;154;34m  workplace_meetin_zoom: failed: MCP connection closed                         [0m
+ [0m[38;2;205;154;34m  workplace_atlassian: needs sign-in                                           [0m
+ [0m[38;2;205;154;34m  workplace_slack: failed: MCP connection closed                               [0m
+ [0m[38;2;205;154;34m  workplace_google_drive: failed: MCP connection closed                        [0m
+ [0m[38;2;205;154;34m  workplace_google_calendar: failed: MCP connection closed                     [0m
+ [0m[38;2;205;154;34m  workplace_lucidcharts: failed: MCP connection closed                         [0m
+ [0m[38;2;205;154;34m  workplace_gmail: failed: MCP connection closed                               [0m
+ [0m[38;2;205;154;34m  posthog: needs sign-in                                                       [0m
+ [0m[38;2;205;154;34mRun /mcp to fix.[0m                                                               
+
+[0m[38;2;205;154;34m────────────────────────────────────────────────────────────────────────────────[0m
+ [0m[1m[38;2;205;154;34mPackage Updates Available[0m                                                      
+ [0m[38;2;157;165;169mPackage updates are available. Run [0m[38;2;167;152;215mpi update --extensions[0m                      
+ [0m[38;2;157;165;169mPackages:[0m                                                                      
+ - pi-cursor-sdk                                                                
+[0m[38;2;205;154;34m────────────────────────────────────────────────────────────────────────────────[0m
+
+[0m[38;2;97;133;204m────────────────────────────────────────────────────────────────────────────────[0m
+[paste #1 2064 chars][0m[7m [0m                                                          
+[0m[38;2;97;133;204m────────────────────────────────────────────────────────────────────────────────[0m
+[0m[38;2;126;136;142m/private/tmp/rtp/work[0m
+[0m[38;2;126;136;142m$0.000 (sub) 0.0%/500k (auto)                (openai-codex) gpt-6.1-sol • medium[0m

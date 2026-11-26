@@ -1,0 +1,24 @@
+[0m[38;2;238;238;238m[48;2;68;68;68m [0m[48;2;68;68;68m[79X[79C[0m
+[0m[1m[2m[38;2;238;238;238m[48;2;68;68;68m› [0m[38;2;238;238;238m[48;2;68;68;68mRun the shell command: touch /tmp/rtp/work/x.txt[0m[48;2;68;68;68m[30X[30C[0m
+[0m[38;2;238;238;238m[48;2;68;68;68m [0m[48;2;68;68;68m[79X[79C[0m
+ 
+[0m[2m• [0mI’ll run the command to create [0m[38;2;166;227;161mx.txt[0m.
+ 
+[0m[1m[38;2;128;128;128m•[1C[0m[1mRunning[0m [0m[38;2;137;180;250mtouch[0m[38;2;205;214;244m /tmp/rtp/work/x.txt[0m
+ 
+ 
+ [1C[0m[1mWould you like to run the following command?[0m
+ 
+  Environment: [0m[1mlocal[0m
+ 
+ [1CReason:[1C[0m[3mAllow creating x.txt in /tmp/rtp/work as requested?[0m
+ 
+ [1C$[1C[0m[38;2;137;180;250mtouch[0m[38;2;205;214;244m /tmp/rtp/work/x.txt[0m
+ 
+ 
+[0m[1m[7m› 1. Yes, proceed (y)                                                           [0m
+ [1C2. Yes, and don't ask again[1Cfor[1Ccommands[1Cthat[1Cstart[1Cwith[1C`touch[1C/tmp/rtp/work/
+ [4Cx.txt`[1C([0m[1mp[0m)
+ [1C3. No, and tell Codex what to do differently[1C([0m[1mesc[0m)
+ 
+  [0m[2mPress [0m[1menter[0m[2m to confirm or [0m[1mesc[0m[2m to cancel                                       [0m
