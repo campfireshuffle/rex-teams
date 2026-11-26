@@ -49,12 +49,22 @@ Open agents in labeled tabs or panes, then talk to one:
 
 > /rex-teams Every 10 minutes, check CI on my PR and stop once it's green.
 
+### Keep alarms across Rex restarts
+
+Rex resumes an alarm after it restarts only if you trust alarm files. Add this line to Rex's `init.lua`, then run `rex config reload`:
+
+```lua
+rex.set("resume.trust.rex-teams-alarm", { command = { "rex", "do", rex.match.under("/tmp/rex-teams/alarms") } })
+```
+
+A one-shot alarm that was due while Rex was down fires once when Rex is back, marked `[late by Ns, Rex restarted]`. A recurring alarm skips the ticks it missed. Until you add the rule, setting an alarm prints a reminder.
+
 ## Limitations
 
 - If you're typing in a pane when a message lands, the message mixes into your draft.
 - A pasted message is occasionally left unsubmitted ([#40](https://github.com/campfireshuffle/rex-teams/issues/40)).
 - A subagent that crashes before reporting wakes nobody.
-- Alarms stop if the Rex server restarts.
+- Alarms come back after a Rex restart if you add the trust rule, but not after a reboot (`/tmp` is cleared).
 - Messages are one-way. A reply across hosts works only if the receiver's `rex hosts` can reach the sender's host.
 - `spawn.lua` starts subagents only on your own host. You can message agents on other hosts and send them files, but not start them there yet ([#37](https://github.com/campfireshuffle/rex-teams/issues/37)).
 - A Windows sender can't send files to another host yet.
