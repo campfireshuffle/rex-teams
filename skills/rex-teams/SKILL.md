@@ -97,6 +97,14 @@ These commands are quoted for POSIX shells. Write your text inside the single qu
 - Before anything public or hard to undo (posting, emailing, pushing, deleting), get the user's OK in your own tab.
 - When you have nothing to do, stop. A message will wake you.
 
+### Other hosts
+
+Add `host=LABEL`, a label from `rex hosts`, to reach agents on another Rex host. `block=` also takes a short ID or a pane's label, and `team.lua host=LABEL` prints ready commands. An unknown label fails; it never falls back to this host.
+
+A message from another host names its Rex host id. To reply, fill in your own `send.lua` path and your label for that host; `rex hosts --json` lists each label with its host id. If the host isn't there, your Rex can't reach it: tell the user instead of retrying.
+
+Short IDs that look like numbers (e.g. `77e564`, `123456`) get mangled by `rex do` (issue #38). Use the full ID, or `--args '{"block":"77e564","message":"..."}'`. Files under `/tmp/rex-teams/` are on the sender's host. Across hosts, put the content in the message or copy the file yourself.
+
 ## Alarms
 
 ```sh

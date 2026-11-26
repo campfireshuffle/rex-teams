@@ -75,7 +75,7 @@ local report = lib.read(lib.dir .. "report.md"):gsub("{(%w+)}", {
   result = result,
   checkout = dir.path,
   worktree = worktree and ("Linked worktree: " .. worktree.path .. "\nBranch at launch: " .. worktree.branch) or "",
-  notify = lib.send_command(session, me, task_id .. " STATUS. Read " .. result
+  notify = lib.send_command(me, task_id .. " STATUS. Read " .. result
     .. ". If it's completed and checks out, run the close command in " .. close_file
     .. ". Then wait for any other subagents you started."),
   nesting = depth > 0
@@ -117,4 +117,4 @@ if worktree then
   print("branch: " .. worktree.branch)
   print("worktree: " .. worktree.path)
 end
-print("message it: " .. lib.send_command(session, block, "MESSAGE"))
+print("message it: " .. lib.send_command(block, "MESSAGE"))

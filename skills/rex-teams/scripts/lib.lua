@@ -37,8 +37,21 @@ function lib.write(path, text)
   assert(f:close())
 end
 
-function lib.call(method, args)
-  return assert(rex.call(method, args))
+-- Rex on HOST, a label from `rex hosts`, or on this host when HOST is nil.
+-- rex.server fails on a label it doesn't know, so nothing lands on this host instead.
+function lib.call(method, args, host)
+  return assert((host and assert(rex.server(host)) or rex).call(method, args))
+end
+
+-- The session and full ID of BLOCK on HOST. BLOCK is anything Rex accepts:
+-- a full ID, a short ID or a label.
+function lib.target(host, block)
+  local r = lib.call("target.resolve", { queries = { block }, kinds = { "block" } }, host).results[1]
+  if r.status == "resolved" then return r.target.session_id, r.target.block_id end
+  local choices = {}
+  for _, c in ipairs(r.candidates or {}) do choices[#choices + 1] = c.block_id .. " (" .. c.label .. ", " .. c.where .. ")" end
+  error("block " .. block .. (#choices > 0 and " could be " .. table.concat(choices, ", ")
+    or ": " .. ((r.reason or "") ~= "" and r.reason or "not found")), 0)
 end
 
 -- Git runs on the machine running this script, like the task files.
@@ -68,15 +81,15 @@ function lib.me()
 end
 
 -- A script must attach to a session before it can act on it.
-function lib.attach(session)
-  lib.call("session.attach", { session_id = session })
+function lib.attach(session, host)
+  lib.call("session.attach", { session_id = session }, host)
 end
 
 -- Every block in a session, with its tab and pane labels.
-function lib.blocks(session)
-  lib.attach(session)
+function lib.blocks(session, host)
+  lib.attach(session, host)
   local out = {}
-  for _, window in ipairs(lib.call("session.view", { session_id = session }).windows) do
+  for _, window in ipairs(lib.call("session.view", { session_id = session }, host).windows) do
     local blocks = {}
     for _, layer in ipairs(window.layers) do
       for _, block in ipairs(layer.blocks) do blocks[#blocks + 1] = block end
@@ -97,12 +110,12 @@ end
 
 -- Paste one line into a terminal, then press Enter. A paste event lets the
 -- program tell the text from the Enter that submits it.
-function lib.paste_line(session, block, text)
-  lib.call("block.event", { session_id = session, block_id = block, event = { type = "paste", payload = { text = text } } })
+function lib.paste_line(session, block, text, host)
+  lib.call("block.event", { session_id = session, block_id = block, event = { type = "paste", payload = { text = text } } }, host)
   for _, action in ipairs({ "press", "release" }) do
     lib.call("block.event", { session_id = session, block_id = block, event = { type = "key", payload = {
       key = "enter", mods = "", consumed_mods = "", text = "\r", unshifted_codepoint = 13, composing = false, action = action,
-    } } })
+    } } }, host)
   end
 end
 
@@ -112,18 +125,32 @@ function lib.quote(s)
 end
 
 -- The command that sends a message to a terminal, for pasting into prompts.
-function lib.send_command(session, block, message)
-  return "rex do " .. lib.quote(lib.dir .. "send.lua") .. " session=" .. lib.quote(session)
+-- HOST is the reader's `rex hosts` label for the terminal's host.
+-- SCRIPT is send.lua's path as written in the command.
+function lib.send_command(block, message, host, script)
+  return "rex do " .. (script or lib.quote(lib.dir .. "send.lua")) .. (host and " host=" .. lib.quote(host) or "")
     .. " block=" .. lib.quote(block) .. " message=" .. lib.quote(message)
 end
 
-function lib.header(from_session, from_block)
+-- The header of a message, for another host when CROSS is true. The sender
+-- can't know send.lua's path or its own label on the receiver's host, so the
+-- receiver fills them in.
+function lib.header(from_session, from_block, cross)
   local from
   for _, block in ipairs(lib.blocks(from_session)) do
     if block.id == from_block then from = lib.name(block) end
   end
-  local reply = lib.send_command(from_session, from_block, "<reply>")
-  return "[from " .. from .. ", who can't see this screen. " .. lib.rule .. " Reply by running: " .. reply .. "] "
+  if not cross then
+    return "[from " .. from .. ", who can't see this screen. " .. lib.rule
+      .. " Reply by running: " .. lib.send_command(from_block, "<reply>") .. "] "
+  end
+  local r = rex.exec({ "hostname" })
+  local name = r and r.ok and r.stdout:match("^%s*(.-)%s*$") or ""
+  assert(name ~= "", "can't read this machine's hostname")
+  local id = assert(lib.call("server.status", {}).host_id, "Rex didn't report this host's host_id")
+  return "[from " .. from .. " on " .. name .. " (Rex host " .. id .. "), who can't see this screen. " .. lib.rule
+    .. " To reply, run this with your rex-teams skill's path and your rex hosts label for that host filled in: "
+    .. lib.send_command(from_block, "<reply>", "<label>", "<rex-teams skill>/scripts/send.lua") .. "] "
 end
 
 return lib
