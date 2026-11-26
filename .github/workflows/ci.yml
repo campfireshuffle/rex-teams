@@ -17,12 +17,15 @@ jobs:
         run: |
           sudo apt-get install -y -qq lua5.1
           for f in skills/rex-teams/scripts/*.lua; do luac5.1 -p "$f"; done
-      - name: Run worktree mock trials
-        run: lua5.1 tests/worktrees.lua
-      - name: Run generated send commands through /bin/sh
-        run: lua5.1 tests/send_command.lua
-      - name: Run spawn publication trials
-        run: lua5.1 tests/spawn.lua
+      - name: Run every test in tests/
+        run: |
+          status=0
+          for t in tests/*.lua; do
+            echo "::group::$t"
+            lua5.1 "$t" || { echo "::error file=$t::$t failed"; status=1; }
+            echo "::endgroup::"
+          done
+          exit $status
       - name: Check the skill's name matches its folder
         run: |
           name=$(sed -n 's/^name: //p' skills/rex-teams/SKILL.md)
