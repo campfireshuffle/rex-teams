@@ -31,12 +31,9 @@ local dir = lib.call("block.method", { session_id = session, block_id = me, meth
 assert(dir.status == "ok", tostring(a.cwd) .. " isn't a folder")
 local worktree = lib.worktree(dir.path)
 
--- Every parent shares the folder, so a random suffix keeps two subagents
--- with the same name apart.
-math.randomseed(os.time() + os.clock() * 1e6)
-local suffix = ""
-for _ = 1, 4 do suffix = suffix .. string.char(math.random(97, 122)) end
-local task_id = a.name .. "-" .. os.date("%Y%m%d-%H%M%S") .. "-" .. suffix
+-- Every parent shares the folder, so the id keeps two subagents with the
+-- same name apart.
+local task_id = a.name .. "-" .. lib.id()
 local task_dir = lib.path("tasks", task_id)
 local prompt, result = lib.path("tasks", task_id, "prompt.md"), lib.path("tasks", task_id, "result.md")
 local close_file = lib.path("tasks", task_id, "close.md")
