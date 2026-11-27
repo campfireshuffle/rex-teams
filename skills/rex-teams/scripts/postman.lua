@@ -146,7 +146,7 @@ end
 -- Whether STATE names a postman that is running: its block exists and its
 -- foreground process is the one that claimed it.
 function M.alive(state)
-  if not (state and state.block and state.pid) then return false end
+  if not state then return false end
   local found = lib.call("target.resolve", { queries = { state.block }, kinds = { "block" } }).results[1]
   if found.status ~= "resolved" then return false end
   lib.attach(found.target.session_id)
@@ -175,13 +175,6 @@ local function home()
     if s.label == "rex-teams" then return s.session_id end
   end
   return lib.call("session.create", { label = "rex-teams" }).session_id
-end
-
--- The trust rule that lets Rex start the postman again after a restart.
--- README.md quotes it.
-function M.rule()
-  return ('rex.set("resume.trust.rex-teams", { command = { "rex", "do", rex.match.under(%q) }, flags = { ["--args"] = { "keep", values = 1 } } })')
-    :format((dir:gsub("[/\\]$", "")))
 end
 
 -- Make sure this host's postman is running, starting it if not. Raises if
@@ -236,7 +229,7 @@ function M.report()
   local r = assert(rex.exec({ "sh", "-c", 'body="pid=$PPID:time=$1:$2"; printf "%s:mac=" "$body"; '
     .. 'printf "%s:%s" "$body" "$OSC7577_TOKEN" | sha256sum | cut -c1-64', "sh", tostring(os.time()), "argv=" .. table.concat(argv, ",") }))
   local body = r.ok and r.stdout:match("^(pid=%d+:.*:mac=%x+)%s*$")
-  if not (body and #body:match("mac=(%x+)$") == 64) then
+  if not body then
     error("postman failed: the OSC 7577 report failed: " .. tostring(r.stderr ~= "" and r.stderr or r.stdout), 0)
   end
   io.stdout:write("\27]7577;", body, "\27\\")

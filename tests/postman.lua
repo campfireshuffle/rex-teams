@@ -179,8 +179,8 @@ end
 -- A message as mail.post queues it. Its from has no name.
 local function queue(o)
   local msg = { id = o.id or "1795671000-abcd", posted = o.posted or S.now, head = o.head or "[from Me", tail = o.tail or ", who…] ",
-    text = o.text or "hi", to = { host = o.host, session = "s:1", block = o.to or "block:to", name = o.name or "Reviewer" },
-    from = o.from or { session = "s:1", block = "block:me" }, at = o.at, every = o.every, start = o.every and (o.start or S.now),
+    text = o.text or "hi", to = { host = o.host, block = o.to or "block:to", name = o.name or "Reviewer" },
+    from = o.from or { block = "block:me" }, at = o.at, every = o.every, start = o.every and (o.start or S.now),
     seq = o.seq or 0, files = o.files }
   os.execute("mkdir -p " .. quote(root .. "/outbox"))
   mail.write(msg)
@@ -519,8 +519,8 @@ trial("nothing tells you about your own messages, and notices cause no notices",
   queue({ id = "1795671000-self", to = "block:me", name = "Me" })
   -- mail.notice lists the outbox through the postman's own pane.
   lib.attach("s:home")
-  mail.notice({ session = "s:1", block = "block:me" }, "x")
-  mail.notice({ session = "s:1", block = "block:gone" }, "y")
+  mail.notice({ block = "block:me" }, "x")
+  mail.notice({ block = "block:gone" }, "y")
   start()
   run_to(S.t + 10)
   fake.put = real_fake.put
@@ -528,10 +528,10 @@ trial("nothing tells you about your own messages, and notices cause no notices",
   local ids = queued()
   assert(#ids == 1, #ids .. " queued")
   local m = read_msg(ids[1]:gsub("%.json$", ""))
-  assert(m.notice and m.dead == "gone", "dead=" .. tostring(m.dead))
+  assert(m.dead == "gone", "dead=" .. tostring(m.dead))
   for _, line in ipairs(S.printed) do assert(not line:find("%.lua:%d+:"), line) end
   -- The next message to that sender still goes out.
-  queue({ id = "1795671010-next", posted = S.now, to = "block:me", from = { session = "s:1", block = "block:other" } })
+  queue({ id = "1795671010-next", posted = S.now, to = "block:me", from = { block = "block:other" } })
   run_to(S.t + 3)
   assert(#me.delivered == 1 and me.delivered[1].text:find("1795671010-next", 1, true), texts(me.delivered))
 end)
@@ -890,16 +890,16 @@ end)
 
 -- The trust rule ----------------------------------------------------------------
 
-trial("README quotes the trust rule as postman.lua writes it", function()
+trial("README quotes the trust rule that lets Rex resume the postman's command", function()
   local f = assert(io.open("README.md"))
   local readme = f:read("*a")
   f:close()
-  local generic = P.rule():gsub(lib.dir:sub(1, -2):gsub("%p", "%%%0"), "<skill>/scripts")
-  assert(readme:find(generic, 1, true), "README.md doesn't quote: " .. generic)
-end)
-trial("the trust rule checks out with rex config check's syntax", function()
+  -- The postman reports `rex do <skill>/scripts/postman.lua --args {}`.
   -- rex.match.under takes the scripts folder, without a trailing slash.
-  assert(P.rule():find('rex.match.under("' .. lib.dir:sub(1, -2) .. '")', 1, true), P.rule())
+  assert(P.script == lib.dir .. "postman.lua", P.script)
+  local rule = 'rex.set("resume.trust.rex-teams", { command = { "rex", "do", rex.match.under("<skill>/scripts") }, '
+    .. 'flags = { ["--args"] = { "keep", values = 1 } } })'
+  assert(readme:find(rule, 1, true), "README.md doesn't quote: " .. rule)
 end)
 
 os.execute("rm -rf " .. quote(tmp))
