@@ -156,6 +156,12 @@ trial("list=true shows your alarms and how to cancel each", function()
   assert(all:find("  cancel: rm " .. root .. "/outbox/", 1, true), all)
 end)
 
+trial("on Windows the setter needs no POSIX tools", function()
+  lib.windows = true
+  set({ ["in"] = 5, message = "x" })
+  assert(#queued() == 1)
+end)
+
 os.execute("rm -rf " .. quote(tmp))
 dofile, os.time, os.getenv = real_dofile, real_time, real_getenv
 if failed > 0 then print(failed .. " of " .. n .. " alarm trials failed.") os.exit(1) end
