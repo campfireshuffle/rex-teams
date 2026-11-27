@@ -44,21 +44,6 @@ function mail.remove(id)
   os.remove(mail.file(id))
 end
 
--- The names in the outbox that match PATTERN, read through the caller's own
--- terminal, since Lua can't list a folder. A capture in PATTERN is returned.
-local here
-local function names(pattern)
-  if not here then here = { lib.me() } end
-  local r = lib.call("block.method", { session_id = here[1], block_id = here[2], method = "list_dir",
-    args = { path = mail.dir(), files = true, limit = 10000 } })
-  local out = {}
-  for _, entry in ipairs(r.entries) do
-    local name = entry.name:match(pattern)
-    if name then out[#out + 1] = name end
-  end
-  return out
-end
-
 -- Whether A was posted before B. POSTED is whole seconds, so SEQ orders
 -- the messages to one receiver posted in the same second.
 function mail.before(a, b)
@@ -68,12 +53,18 @@ function mail.before(a, b)
 end
 
 -- The queue, oldest first. FILTER may name { block, host } to list only
--- the messages to one receiver. Every file is written whole by mail.write,
--- so one that isn't JSON was edited by hand: say which, and stop.
+-- the messages to one receiver. Lua can't list a folder, so the caller's own
+-- terminal lists the outbox. Every file is written whole by mail.write, so
+-- one that isn't JSON was edited by hand: say which, and stop.
+local here
 function mail.list(filter)
+  if not here then here = { lib.me() } end
+  local r = lib.call("block.method", { session_id = here[1], block_id = here[2], method = "list_dir",
+    args = { path = mail.dir(), files = true, limit = 10000 } })
   local out = {}
-  for _, id in ipairs(names("^(%d+%-%a%a%a%a)%.json$")) do
-    local f = io.open(mail.file(id))
+  for _, entry in ipairs(r.entries) do
+    local id = entry.name:match("^(%d+%-%a%a%a%a)%.json$")
+    local f = id and io.open(mail.file(id))
     if f then
       local text = f:read("*a")
       f:close()
@@ -135,10 +126,7 @@ function mail.post(o)
   lib.attach(from_session)
   local paths = lib.locate(from_session, from_block, files)
   local id = lib.id()
-  local name = block
-  for _, b in ipairs(lib.blocks(session, host)) do
-    if b.id == block then name = lib.name(b) end
-  end
+  local name = lib.name(session, block, host)
 
   if #paths > 0 and host then
     need(not lib.windows, "file= to another host doesn't work from Windows yet")

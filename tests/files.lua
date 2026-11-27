@@ -23,7 +23,7 @@ end
 sh("ln -s " .. quote(src .. "/a.md") .. " " .. quote(src .. "/link.md"))
 sh("ln -s " .. quote(src .. "/dir") .. " " .. quote(src .. "/linkdir"))
 sh("ln -s c.txt " .. quote(src .. "/dir/sub/inner"))
--- A file list_dir lists but cp can't read, and a name with a line break.
+-- A file this user can't read, and a name with a line break.
 local locked, broken = "locked.md", "line\nbreak.md"
 for _, name in ipairs({ locked, broken }) do
   local f = assert(io.open(src .. "/" .. name, "w"))
@@ -98,11 +98,9 @@ local function local_dir(block, args)
     local entries = {}
     local ls = io.popen("ls -A " .. quote(p))
     for name in ls:lines() do
-      if not args.prefix or name:lower():sub(1, #args.prefix) == args.prefix:lower() then entries[#entries + 1] = { name = name } end
+      entries[#entries + 1] = { name = name }
     end
     ls:close()
-    -- ls splits a name with a line break, so look for the exact name too.
-    if args.prefix and args.prefix:find("\n") and exists(p .. "/" .. args.prefix) then entries[#entries + 1] = { name = args.prefix } end
     return { status = "ok", path = p, entries = entries, truncated = false }
   end
   local up = p
@@ -375,9 +373,20 @@ check("Windows without TEMP: lib.lua stops with an error", function()
   assert(not ok and has(tostring(err), "TEMP"), tostring(err))
   assert(ok2 and lib.root == "C:\\T\\rex-teams", tostring(lib))
 end)
-check("a file cp can't read: the sender is told, no rex cp, nothing sent", function()
-  undelivered({ host = "ws", block = "Builder", message = "see", file = { "a.md", locked } }, "can't copy the files")
-  assert(rexes() == 0 and tree(root .. "/stage") == ".", "rex cp ran or the stage was left")
+check("a file that can't be read: error, nothing copied or sent", function()
+  for _, host in ipairs({ false, "ws" }) do
+    reset()
+    fails({ host = host or nil, block = host and "Builder" or "Helper", message = "see", file = { "a.md", locked } }, "locked.md: missing")
+    assert(rexes() == 0 and not exists(root .. "/outbox"))
+  end
+end)
+check("a file gone by delivery: the sender is told, no rex cp, nothing sent", function()
+  sh("cp " .. quote(src .. "/a.md") .. " " .. quote(src .. "/later.md"))
+  assert(run({ host = "ws", block = "Builder", message = "see", file = "later.md" }))
+  sh("rm " .. quote(src .. "/later.md"))
+  local notice = deliver()
+  assert(notice and has(notice, "can't copy the files"), tostring(notice))
+  assert(#pasted == 0 and rexes() == 0 and tree(root .. "/stage") == ".", "rex cp ran, a paste went or the stage was left")
 end)
 check("/tmp/rex-teams on the receiver not a folder or denied: the sender is told, no rex cp, nothing sent", function()
   for _, status in ipairs({ "not_dir", "denied" }) do
