@@ -135,7 +135,7 @@ trial("the postman is woken, then the message is queued as one file, atomically"
   assert(id:match("^%d+%-%a%a%a%a$") and name == "Helper", id .. " " .. name)
   local msg = only()
   assert(msg.id == id and msg.text == "hi" and msg.to.block == "block:peer" and msg.to.session == "s:me" and msg.to.name == "Helper")
-  assert(msg.from.block == "block:me" and msg.from.name == "Chief" and msg.to.host == nil)
+  assert(msg.from.block == "block:me" and msg.to.host == nil)
   assert(msg.head == "[from Chief" and msg.tail:find("^, who can't see this screen%. Don't rename the Rex session or your tab%. Reply by running: rex do "), msg.tail)
   assert(msg.tail:find("block='block:me' message='<reply>'] $"), msg.tail)
   assert(renames == 1 and ensured == 1 and queued_at_ensure == 0, "queued before the postman was woken")
@@ -169,10 +169,6 @@ for _, row in ipairs({
   { "an unknown block", { to = "Nobody", text = "hi" }, "block Nobody: not found" },
   { "an unknown host", { to = "Builder", host = "nope", text = "hi" }, 'no host named "nope"' },
   { "a missing file", { to = "Helper", text = "hi", files = { "a.md", "gone.md" } }, "file gone.md: missing" },
-  { "a zero interval", { to = "Helper", text = "hi", every = 0 }, "every must be a positive number of seconds" },
-  { "a word for an interval", { to = "Helper", text = "hi", every = "often" }, "every must be a positive number of seconds" },
-  { "a negative time", { to = "Helper", text = "hi", at = -5 }, "at must be a positive number of seconds" },
-  { "both at and every", { to = "Helper", text = "hi", at = 5, every = 15 }, "use at or every, not both" },
   { "two files with one name to another host", { to = "Builder", host = "ws", text = "hi", files = { "a.md", "x/a.md" } }, "two files are named a.md" },
 }) do
   trial("refused before anything is queued: " .. row[1], function()
@@ -219,7 +215,7 @@ trial("list reads the queue oldest first, and filters by receiver", function()
   local here = mail.list
   os.execute("mkdir -p " .. quote(root .. "/outbox"))
   local function full(m)
-    m.seq, m.from, m.head, m.tail, m.text = 0, { session = "s:1", block = "block:me", name = "Chief" }, "[from Chief", "] ", "hi"
+    m.seq, m.from, m.head, m.tail, m.text = 0, { session = "s:1", block = "block:me" }, "[from Chief", "] ", "hi"
     m.to.session, m.to.name = "s:2", "Peer"
     return m
   end
@@ -239,6 +235,28 @@ trial("list reads the queue oldest first, and filters by receiver", function()
   lib.write(root .. "/outbox/100-aaaa.json", "nope")
   local ok, err = pcall(here)
   assert(not ok and err:find("^" .. (root .. "/outbox/100-aaaa.json"):gsub("%p", "%%%0") .. " isn't a message .*; delete it$"), tostring(err))
+end)
+trial("notices to one sender in one second are listed in the order they were written", function()
+  os.execute("mkdir -p " .. quote(root .. "/outbox"))
+  rex.call = function(method, args)
+    if method == "block.method" and args.method == "list_dir" then
+      local entries = {}
+      for _, name in ipairs(outbox_files()) do entries[#entries + 1] = { name = name } end
+      return { status = "ok", entries = entries }
+    end
+    return servers[""].call(method, args)
+  end
+  local real_time = os.time
+  os.time = function() return 1000 end
+  local ok, err = pcall(function()
+    local sender = { session = "s:me", block = "block:me" }
+    for i = 1, 20 do mail.notice(sender, "n" .. i) end
+    local got = mail.list({ block = "block:me" })
+    assert(#got == 20, #got)
+    for i, msg in ipairs(got) do assert(msg.text == "n" .. i, "notice " .. i .. " is " .. msg.text) end
+  end)
+  os.time = real_time
+  assert(ok, err)
 end)
 trial("a write of a file someone deleted doesn't bring it back", function()
   os.execute("mkdir -p " .. quote(root .. "/outbox"))

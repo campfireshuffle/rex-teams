@@ -11,7 +11,9 @@
 -- the receiver's name. The postman delivers it; see postman.lua. Delete the file to drop the
 -- message or cancel the alarm.
 --
--- AT is a unix time; EVERY repeats every EVERY seconds from now. FILES are
+-- AT is a unix time; EVERY repeats every EVERY seconds from now. The
+-- callers (send.lua, alarm.lua) pass HOST as a string, and at most one of
+-- AT or EVERY, positive. FILES are
 -- paths as the sender's terminal reads them, and must exist. On this host
 -- the message names them; on another host they're copied at delivery into
 -- the receiver's /tmp/rex-teams/inbox/<block>/<id>/, which the message names.
@@ -110,7 +112,6 @@ function mail.notice(from, text)
   local id, now = lib.id(), os.time()
   mail.write({ id = id, posted = now, seq = seq(from, now), notice = true, to = from, from = from,
     head = "[rex-teams postman", tail = "] ", text = text })
-  return id
 end
 
 function mail.post(o)
@@ -123,15 +124,10 @@ function mail.post(o)
   -- Rex resolves an empty query to some terminal.
   need(type(to) == "string" and to:match("%S"), "say who the message is for")
   local host = o.host
-  need(host == nil or type(host) == "string", "host must be a label from rex hosts")
   local files = type(o.files) == "table" and o.files or { o.files }
   for _, file in ipairs(files) do
     need(type(file) == "string" and file ~= "", "file must be a path or a list of paths")
   end
-  for _, k in ipairs({ "at", "every" }) do
-    need(o[k] == nil or (type(o[k]) == "number" and o[k] > 0), k .. " must be a positive number of seconds")
-  end
-  need(not (o.at and o.every), "use at or every, not both")
 
   local session, block = lib.target(host, to)
   local from_session, from_block = lib.me()
@@ -141,10 +137,6 @@ function mail.post(o)
   local name = block
   for _, b in ipairs(lib.blocks(session, host)) do
     if b.id == block then name = lib.name(b) end
-  end
-  local from_name = from_block
-  for _, b in ipairs(lib.blocks(from_session)) do
-    if b.id == from_block then from_name = lib.name(b) end
   end
 
   if #paths > 0 and host then
@@ -164,7 +156,7 @@ function mail.post(o)
   queue({
     id = id, posted = now, seq = seq({ block = block, host = host }, now),
     to = { host = host, session = session, block = block, name = name },
-    from = { session = from_session, block = from_block, name = from_name },
+    from = { session = from_session, block = from_block },
     head = head, tail = tail, text = text,
     files = host and #paths > 0 and paths or nil,
     at = o.at, every = o.every, start = o.every and now,

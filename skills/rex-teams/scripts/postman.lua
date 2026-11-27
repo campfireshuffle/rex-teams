@@ -55,7 +55,7 @@ end
 --   wait   nothing until AT
 --   check  call again with what pane.exists says: {} when it's there,
 --          { gone = true }, or { error = why } when Rex can't reach it
---   hold   Rex can't reach the receiver (WHY); check again at AT
+--   hold   Rex can't reach the receiver; check again at AT
 --   attach copy the files into the receiver's inbox, then step again
 --   put    paste TEXT and press Enter, set d.sent or d.error, then step again
 --   done   delivered: remove the message
@@ -68,7 +68,6 @@ end
 -- A recurring alarm sends its last due tick, however late; ticks that pile
 -- up collapse into the latest one, and the schedule never drifts.
 function M.step(msg, check, now)
-  if msg.dead then return { kind = "wait" } end
   if msg.every and not (msg.d and msg.d.pasted_at) then
     local k = M.last_tick(msg, now)
     if k > (msg.k or 0) then
@@ -81,8 +80,7 @@ function M.step(msg, check, now)
   elseif not msg.d then
     local due = msg.at or msg.posted
     if now < due then return { kind = "wait", at = due } end
-    msg.d = { tag = msg.id, note = msg.late and msg.late >= 1
-      and (" [late by " .. msg.late .. "s, Rex restarted]") or nil }
+    msg.d = { tag = msg.id, note = msg.late and " [late by " .. msg.late .. "s, Rex restarted]" }
   end
   local d = msg.d
 
@@ -106,9 +104,9 @@ function M.step(msg, check, now)
   end
   if check.error then
     d.why = "Rex can't reach it (" .. check.error .. ")"
-    return { kind = "hold", why = d.why, at = now + M.poll }
+    return { kind = "hold", at = now + M.poll }
   end
-  if msg.files and #msg.files > 0 and not d.attached then return { kind = "attach" } end
+  if msg.files and not d.attached then return { kind = "attach" } end
   d.why, d.pasted_at = nil, now
   return { kind = "put", text = msg.head .. " · msg " .. d.tag .. msg.tail .. msg.text .. (d.note or "") }
 end
