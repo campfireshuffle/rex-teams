@@ -6,8 +6,8 @@
 -- as Rex reads it. HOST is a label from `rex hosts`; leave it out for this
 -- host. team.lua prints this command, filled in, for each agent.
 --
--- It queues the message and returns; the postman delivers it once the other
--- agent's prompt box is free, and tells you if it can't. The message arrives as
+-- It queues the message and returns; the postman types it in as it arrives,
+-- and tells you if it can't. The message arrives as
 --   [from <your name> · msg <id>, who can't see this screen. <rule> Reply by running: <command>] MESSAGE
 -- so the other agent knows who wrote and how to answer, even if it has never
 -- heard of this skill. Without "can't see this screen", agents tend to answer
@@ -19,10 +19,10 @@
 -- message lists their paths. On another host they're copied into
 -- /tmp/rex-teams/inbox/<block>/<id>/ there before the message goes, and the
 -- message says the receiver can remove that folder once it has read them.
-local mail = dofile(debug.getinfo(1, "S").source:gsub("^@", ""):match("^(.*[/\\])") .. "mail.lua")
+local dir = debug.getinfo(1, "S").source:gsub("^@", ""):match("^(.*[/\\])")
+local lib = dofile(dir .. "lib.lua")
+local mail = dofile(dir .. "mail.lua")
 local a = rex.args
-local usage = "usage: send.lua [host=HOST] block=BLOCK message='MESSAGE' [file=PATH]"
-assert(a.message ~= nil and a.block ~= nil, usage)
-local id, name, hint = mail.post({ to = tostring(a.block), host = a.host and tostring(a.host), text = tostring(a.message), files = a.file })
+lib.need(a.message ~= nil and a.block ~= nil, "usage: send.lua [host=HOST] block=BLOCK message='MESSAGE' [file=PATH]")
+local id, name = mail.post({ to = tostring(a.block), host = a.host and tostring(a.host), text = tostring(a.message), files = a.file })
 print("queued message " .. id .. " for " .. name)
-if hint then print(hint) end

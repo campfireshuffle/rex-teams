@@ -176,7 +176,7 @@ local function run(args, windows)
   return ok, err
 end
 
--- Deliver the queued message to an idle, empty prompt box, as the postman
+-- Deliver the queued message to a receiver that's there, as the postman
 -- would. Returns the notice its sender gets instead, if any.
 local function deliver()
   load()
@@ -188,7 +188,7 @@ local function deliver()
   local f = assert(io.open(root .. "/outbox/" .. name))
   local msg = json.decode(f:read("*a"))
   f:close()
-  local idle = { status = "idle", known = true, composer = { text = "" } }
+  local idle = {}
   for _ = 1, 3 do
     local a = P.step(msg, idle, os.time())
     if a.kind == "attach" then

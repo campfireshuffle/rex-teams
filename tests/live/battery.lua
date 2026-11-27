@@ -5,9 +5,10 @@
 -- It opens a scratch session, rex-teams-battery, with a stand-in sender (a
 -- plain shell) and one pane per CLI, and checks each scenario the postman
 -- handles. Receivers are told not to reply or run anything, and every
--- message names a sender that isn't an agent. With host=, it also sends one
--- message to a Pi in a scratch session on that host. It closes everything
--- it opened, including any postman it started, and prints a table.
+-- message names a sender that isn't an agent. With host=, it also sends a
+-- message, and one with a file, to a Pi in a scratch session on that host.
+-- It closes everything it opened, including any postman it started, and
+-- prints a table.
 --
 -- It uses the postman in this checkout, so stop any other postman first
 -- (see /tmp/rex-teams/postman.json).
@@ -22,10 +23,8 @@ local clis = {
   { name = "codex", cmd = { "codex" } },
   { name = "opencode", cmd = { "opencode" } },
   { name = "pi", cmd = { "pi" } },
-  { name = "shell" }, -- this host's shell: the postman doesn't read it
+  { name = "shell" }, -- this host's shell
 }
--- A CLI that can show a permission dialog, started so it does.
-local dialogs = { codex = { "codex", "-a", "on-request", "-s", "read-only", "-c", "approvals_reviewer=user" } }
 if a.only then
   local keep = {}
   for name in tostring(a.only):gmatch("[^,]+") do keep[name] = true end
@@ -72,7 +71,6 @@ local function status(block, host, s)
   end
 end
 local function screen(block, host, s) return method(block, "format", { format = "text" }, host, s).content end
-local function write(block, data) method(block, "write", { data = data }) end
 local function paste(block, text)
   call("block.event", { session_id = session, block_id = block, event = { type = "paste", payload = { text = text } } })
 end
@@ -104,32 +102,12 @@ local function run(script, args)
 end
 local function send(block, text, host) return run("send.lua", { block = block, message = text .. quiet, host = host }) end
 
--- A message as mail.post would queue it, already pasted and Entered, to
--- stand in for one whose Enter the CLI lost. BEFORE runs first, with the
--- text the postman pasted.
-local function forge(block, text, before)
-  local id = tostring(os.time()) .. "-" .. string.char(math.random(97, 122), math.random(97, 122), math.random(97, 122), math.random(97, 122))
-  local msg = { id = id, posted = os.time(), seq = 0, to = { session = session, block = block, name = "receiver" },
-    from = { session = session, block = sender, name = "battery sender" },
-    head = "[from battery sender", tail = ", who can't see this screen.] ", text = text .. quiet }
-  local pasted = msg.head .. " · msg " .. id .. msg.tail .. msg.text
-  msg.d = { tag = id, pasted_at = os.time(), known = true, text = pasted }
-  before(pasted)
-  rex.sleep(1)
-  local f = assert(io.open(outbox(id) .. ".tmp", "w"))
-  f:write(rex.json.encode(msg))
-  f:close()
-  assert(os.rename(outbox(id) .. ".tmp", outbox(id)))
-  return id
-end
-
 -- Scenarios ----------------------------------------------------------------------
 
 local results, order = {}, {}
 local function record(cli, scenario, ok, note)
-  if not results[scenario] or not results[scenario].listed then
-    results[scenario] = results[scenario] or {}
-    results[scenario].listed = true
+  if not results[scenario] then
+    results[scenario] = {}
     order[#order + 1] = scenario
   end
   results[scenario][cli] = (ok and "pass" or "FAIL") .. (note and note ~= "" and " (" .. note .. ")" or "")
@@ -141,23 +119,12 @@ local function delivered(block, id, seconds)
   return ok, now() - t0
 end
 local function seen(block, id) return screen(block):find("msg " .. id, 1, true) ~= nil end
-local function clear(block) write(block, string.rep("\127", 400)) rex.sleep(0.5) end
 
 local scenarios = {}
 function scenarios.idle(c)
   local id = send(c.block, "Idle delivery.")
   local ok, took = delivered(c.block, id)
   return ok and seen(c.block, id), ("%.1fs"):format(took)
-end
-function scenarios.draft(c)
-  write(c.block, "a person's half-written draft")
-  rex.sleep(1)
-  local id = send(c.block, "Draft held.")
-  rex.sleep(6)
-  local held = exists(outbox(id)) and screen(c.block):find("half-written draft", 1, true) and not seen(c.block, id)
-  clear(c.block)
-  local ok = delivered(c.block, id)
-  return held and ok and seen(c.block, id), held and "held 6s, then sent" or "not held"
 end
 function scenarios.busy(c)
   paste(c.block, "Run the shell command `sleep 15` and then reply with just OK.")
@@ -170,15 +137,16 @@ function scenarios.busy(c)
   local shown = wait_for(function() return seen(c.block, id) end, 90)
   return ok and working and shown, ("delivered %.1fs into the turn%s%s"):format(took, working and "" or ", turn over by then", shown and "" or ", id never shown")
 end
-function scenarios.lost_enter(c)
-  -- What a lost Enter leaves: our text in the composer, unsent.
-  local id = forge(c.block, "Lost Enter.", function(text) paste(c.block, text) end)
-  local ok = delivered(c.block, id, 20)
-  return ok and seen(c.block, id), ok and "Enter pressed once more" or "still queued"
+function scenarios.file(c)
+  local path = work .. "/note-" .. c.name .. ".md"
+  local f = assert(io.open(path, "w"))
+  f:write("a note\n")
+  f:close()
+  local id = run("send.lua", { block = c.block, message = "File attached." .. quiet, file = path })
+  local ok, took = delivered(c.block, id)
+  return ok and seen(c.block, id) and screen(c.block):find(path, 1, true) ~= nil, ("%.1fs"):format(took)
 end
 function scenarios.shell(c)
-  write(c.block, "a draft the postman doesn't read")
-  rex.sleep(1)
   local id = send(c.block, "Shell paste.")
   local ok, took = delivered(c.block, id, 10)
   return ok and seen(c.block, id), ("%.1fs"):format(took)
@@ -188,22 +156,10 @@ function scenarios.alarm(c)
   local f = assert(io.open(outbox(id)))
   local at = rex.json.decode(f:read("*a")).at
   f:close()
-  local ok = wait_for(function() return not exists(outbox(id)) end, 20)
-  -- Delivered once the receiver starts on it, a moment after the paste.
+  -- Timed to the paste: when the id shows on the receiver's screen.
+  local ok = wait_for(function() return seen(c.block, id) end, 20)
   local late = now() - at
-  return ok and late >= 0 and late < 3 and seen(c.block, id), ("+%.1fs after its time"):format(late)
-end
-function scenarios.dialog(c)
-  if not c.dialog then return nil, "no dialog in this CLI" end
-  paste(c.dialog, "Run the shell command: touch " .. work .. "/dialog.txt")
-  enter(c.dialog)
-  if not wait_for(function() return status(c.dialog) == "blocked" end, 40) then return false, "no dialog shown" end
-  local id = send(c.dialog, "Dialog held.")
-  rex.sleep(6)
-  local held = exists(outbox(id)) and not seen(c.dialog, id)
-  write(c.dialog, "\27") -- cancel the dialog
-  local ok = delivered(c.dialog, id, 40)
-  return held and ok, held and "held while its prompt box was covered" or "not held"
+  return ok and late >= 0 and late < 3, ("pasted +%.1fs after its time"):format(late)
 end
 
 -- Run ---------------------------------------------------------------------------------
@@ -221,17 +177,16 @@ local ok, err = pcall(function()
   math.randomseed(os.time())
   for _, c in ipairs(clis) do
     c.block = pane(c.name, c.cmd)
-    if dialogs[c.name] then c.dialog = pane(c.name .. " (dialog)", dialogs[c.name]) end
   end
   for _, c in ipairs(clis) do
     if c.cmd and not wait_for(function() return idle(c.block) end, 40) then c.down = "never idle: " .. tostring(status(c.block)) end
   end
-  for _, name in ipairs({ "idle", "draft", "busy", "lost_enter", "dialog", "alarm", "shell" }) do
+  for _, name in ipairs({ "idle", "busy", "alarm", "file", "shell" }) do
     for _, c in ipairs(clis) do
       if c.down then record(c.name, name, false, c.down) else
         if c.cmd then wait_for(function() return idle(c.block) end, 60) end
         local ok2, pass, note = true, nil, "not for this pane"
-        if (c.name == "shell") == (name == "shell") then ok2, pass, note = pcall(scenarios[name], c) end
+        if name == "file" or (c.name == "shell") == (name == "shell") then ok2, pass, note = pcall(scenarios[name], c) end
         if not ok2 then record(c.name, name, false, tostring(pass))
         elseif pass == nil then results[name] = results[name] or {} record(c.name, name, true, "n/a: " .. note)
         else record(c.name, name, pass, note) end
@@ -246,8 +201,19 @@ local ok, err = pcall(function()
       layout = rex.layout.block({ flavor = T .. ".shell", options = { command = { "pi" }, exit = { on_completion = false } } }) }, a.host).block_ids[1]
     wait_for(function() return idle(b, a.host, far) end, 60)
     local id = send(b, "Cross-host delivery.", a.host)
-    local ok2 = delivered(b, id, 60)
-    record("pi@" .. a.host, "cross-host", ok2 and screen(b, a.host, far):find("msg " .. id, 1, true) ~= nil)
+    local ok2, took = delivered(b, id, 60)
+    record("pi@" .. a.host, "cross-host", ok2 and screen(b, a.host, far):find("msg " .. id, 1, true) ~= nil, ("%.1fs"):format(took))
+    local path = work .. "/far-note.md"
+    local f = assert(io.open(path, "w"))
+    f:write("a note for another host\n")
+    f:close()
+    id = run("send.lua", { block = b, host = a.host, message = "Cross-host file." .. quiet, file = path })
+    ok2, took = delivered(b, id, 90)
+    local landed = "/tmp/rex-teams/inbox/" .. b:gsub("^block:", "") .. "/" .. id
+    local there = method(b, "list_dir", { path = landed .. "/far-note.md", limit = 1 }, a.host, far).status
+    record("pi@" .. a.host, "cross-host file=", ok2 and there == "not_dir" and screen(b, a.host, far):find("msg " .. id, 1, true) ~= nil,
+      ("%.1fs, file %s"):format(took, there))
+
   end
 end)
 if not ok then print("battery stopped: " .. tostring(err)) end
@@ -266,8 +232,11 @@ local header = "| scenario |"
 for _, c in ipairs(clis) do header = header .. " " .. c.name .. " |" end
 print(header)
 for _, name in ipairs(order) do
+  if name:find("^cross%-host") then break end
   local row = "| " .. name .. " |"
   for _, c in ipairs(clis) do row = row .. " " .. (results[name][c.name] or "") .. " |" end
   print(row)
 end
-if results["cross-host"] then for k, v in pairs(results["cross-host"]) do print("| cross-host | " .. k .. ": " .. v .. " |") end end
+for _, name in ipairs({ "cross-host", "cross-host file=" }) do
+  for k, v in pairs(results[name] or {}) do print("| " .. name .. " | " .. k .. ": " .. v .. " |") end
+end

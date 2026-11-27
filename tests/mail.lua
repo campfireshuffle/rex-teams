@@ -86,11 +86,10 @@ local queued_at_ensure
 dofile = function(path)
   if path:match("/lib%.lua$") then return lib end
   if path:match("/postman%.lua$") then
-    return { ensure = function(hint)
+    return { ensure = function()
       ensured = ensured + 1
       queued_at_ensure = #outbox_files()
       if ensure_error then error(ensure_error, 0) end
-      return hint and "the hint" or nil
     end }
   end
   return real_dofile(path)
@@ -163,21 +162,25 @@ trial("the address is resolved once, at post", function()
 end)
 for _, row in ipairs({
   { "two lines", { to = "Helper", text = "a\nb" }, "the message must be one line" },
-  { "no text", { to = "Helper" }, "the message is required" },
+  { "no text", { to = "Helper" }, "the message is empty; say something" },
+  { "an empty message", { to = "Helper", text = "" }, "the message is empty; say something" },
+  { "a blank message", { to = "Helper", text = "   " }, "the message is empty; say something" },
   { "a blank address", { to = "  ", text = "hi" }, "say who the message is for" },
   { "an unknown block", { to = "Nobody", text = "hi" }, "block Nobody: not found" },
   { "an unknown host", { to = "Builder", host = "nope", text = "hi" }, 'no host named "nope"' },
   { "a missing file", { to = "Helper", text = "hi", files = { "a.md", "gone.md" } }, "file gone.md: missing" },
-  { "a zero interval", { to = "Helper", text = "hi", every = 0 }, "every must be a positive number" },
-  { "a negative time", { to = "Helper", text = "hi", at = -5 }, "at must be a positive number" },
+  { "a zero interval", { to = "Helper", text = "hi", every = 0 }, "every must be a positive number of seconds" },
+  { "a word for an interval", { to = "Helper", text = "hi", every = "often" }, "every must be a positive number of seconds" },
+  { "a negative time", { to = "Helper", text = "hi", at = -5 }, "at must be a positive number of seconds" },
   { "both at and every", { to = "Helper", text = "hi", at = 5, every = 15 }, "use at or every, not both" },
-  -- Delivery takes about 2 s; a shorter interval would lose ticks.
-  { "a 0.3-second interval", { to = "Helper", text = "hi", every = 0.3 }, "every must be at least 3 seconds" },
-  { "a 1.5-second interval", { to = "Helper", text = "hi", every = 1.5 }, "every must be at least 3 seconds" },
-  { "a 2.9-second interval", { to = "Helper", text = "hi", every = 2.9 }, "every must be at least 3 seconds" },
   { "two files with one name to another host", { to = "Builder", host = "ws", text = "hi", files = { "a.md", "x/a.md" } }, "two files are named a.md" },
 }) do
-  trial("refused before anything is queued: " .. row[1], function() fails(row[3], row[2]) end)
+  trial("refused before anything is queued: " .. row[1], function()
+    fails(row[3], row[2])
+    -- A plain sentence, without the script's file and line.
+    local _, err = pcall(mail.post, row[2])
+    assert(not tostring(err):find("%.lua:%d"), err)
+  end)
 end
 trial("an unknown host fails with no calls on this host", function()
   fails('no host named "nope"', { to = "Builder", host = "nope", text = "hi" })
@@ -208,15 +211,9 @@ trial("a recurring alarm stores its interval exactly, and starts now", function(
   local msg = only()
   assert(msg.every == 10.5 and msg.start >= before and msg.start <= os.time() and msg.head == "[from Chief")
 end)
-trial("the shortest interval, 3 seconds, is taken", function()
-  mail.post({ to = "Helper", text = "tick", every = 3 })
-  assert(only().every == 3)
-end)
-trial("hint=true asks the postman whether it's trusted", function()
-  local _, _, hint = mail.post({ to = "Helper", text = "x", hint = true })
-  assert(hint == "the hint")
-  _, _, hint = mail.post({ to = "Helper", text = "x" })
-  assert(hint == nil)
+trial("any positive interval is taken, however short", function()
+  mail.post({ to = "Helper", text = "tick", every = 0.5 })
+  assert(only().every == 0.5)
 end)
 trial("list reads the queue oldest first, and filters by receiver", function()
   local here = mail.list
@@ -238,100 +235,10 @@ trial("list reads the queue oldest first, and filters by receiver", function()
   assert(#all == 2 and all[1].id == "100-aaaa" and all[2].id == "200-bbbb")
   local one = here({ block = "block:far", host = "ws" })
   assert(#one == 1 and one[1].id == "100-aaaa")
-  -- Every field is required: a file without one, or that isn't JSON, is
-  -- left out and named with why, and the rest are still listed.
-  local bare = full({ id = "200-bbbb", posted = 200, to = { block = "block:peer" } })
-  bare.seq = nil
-  mail.write(bare)
-  lib.write(root .. "/outbox/100-aaaa.json", "{ not json")
-  local good, bad = here()
-  assert(#good == 0 and #bad == 2, #good .. " " .. #bad)
-  table.sort(bad, function(a, b) return a.file < b.file end)
-  assert(bad[1].file == root .. "/outbox/100-aaaa.json" and bad[1].why:find("isn't JSON", 1, true), bad[1].why)
-  assert(bad[2].file == root .. "/outbox/200-bbbb.json" and bad[2].why == "has no seq", bad[2].why)
-end)
-trial("list sets aside a file with any field of the wrong type, nested ones too", function()
-  os.execute("mkdir -p " .. quote(root .. "/outbox"))
-  local function full()
-    return { id = "100-aaaa", posted = 100, seq = 0, head = "[from Chief", tail = "] ", text = "hi",
-      to = { session = "s:2", block = "block:peer", name = "Peer" }, from = { session = "s:1", block = "block:me", name = "Chief" } }
-  end
-  rex.call = function(method, args)
-    if method == "block.method" and args.method == "list_dir" then return { status = "ok", entries = { { name = "100-aaaa.json" } } } end
-    return servers[""].call(method, args)
-  end
-  mail.write(full())
-  local good, bad = mail.list()
-  assert(#good == 1 and #bad == 0, "a whole message is listed")
-  for _, row in ipairs({
-    { function(m) m.to = false end, "has a to that isn't a table" },
-    { function(m) m.to.block = 7 end, "has a to.block that isn't a string" },
-    { function(m) m.to.host = true end, "has a to.host that isn't a string" },
-    { function(m) m.from.block = nil end, "has no from.block" },
-    { function(m) m.from.name = {} end, "has a from.name that isn't a string" },
-    { function(m) m.posted = "100" end, "has a posted that isn't a number" },
-    { function(m) m.every = "60" end, "has an every that isn't a number" },
-    { function(m) m.every = 60 end, "has every but no start" },
-    { function(m) m.files = { "/a", 2 } end, "has a files[2] that isn't a string" },
-    { function(m) m.d = { tag = "100-aaaa", pasted_at = "now" } end, "has a d.pasted_at that isn't a number" },
-    { function(m) m.d = {} end, "has no d.tag" },
-    { function(m) m.dead = true end, "has a dead that isn't a string" },
-    { function(m) m.seq = "0" end, "has a seq that isn't a number" },
-    { function(m) m.head = 1 end, "has a head that isn't a string" },
-    { function(m) m.tail = 1 end, "has a tail that isn't a string" },
-    { function(m) m.text = 1 end, "has a text that isn't a string" },
-    { function(m) m.at = "x" end, "has an at that isn't a number" },
-    { function(m) m.start = "x" end, "has a start that isn't a number" },
-    { function(m) m.k = "x" end, "has a k that isn't a number" },
-    { function(m) m.due = "x" end, "has a due that isn't a number" },
-    { function(m) m.late = "x" end, "has a late that isn't a number" },
-    { function(m) m.held_since = "x" end, "has a held_since that isn't a number" },
-    { function(m) m.notice = "x" end, "has a notice that isn't a boolean" },
-    { function(m) m.noticed = "x" end, "has a noticed that isn't a boolean" },
-    { function(m) m.d = { tag = "100-aaaa", known = "x" } end, "has a d.known that isn't a boolean" },
-    { function(m) m.d = { tag = "100-aaaa", looked = "x" } end, "has a d.looked that isn't a boolean" },
-    { function(m) m.d = { tag = "100-aaaa", text = 1 } end, "has a d.text that isn't a string" },
-    { function(m) m.d = { tag = "100-aaaa", note = 1 } end, "has a d.note that isn't a string" },
-    { function(m) m.d = { tag = "100-aaaa", attached = "x" } end, "has a d.attached that isn't a boolean" },
-    { function(m) m.d = { tag = "100-aaaa", attach_error = 1 } end, "has a d.attach_error that isn't a string" },
-    { function(m) m.d = { tag = "100-aaaa", why = {} } end, "has a d.why that isn't a string" },
-    { function(m) m.d = { tag = "100-aaaa", saved_why = 1 } end, "has a d.saved_why that isn't a string" },
-    { function(m) m.to.session = 1 end, "has a to.session that isn't a string" },
-    { function(m) m.to.name = 1 end, "has a to.name that isn't a string" },
-    { function(m) m.from.host = 1 end, "has a from.host that isn't a string" },
-  }) do
-    local m = full()
-    row[1](m)
-    mail.write(m)
-    good, bad = mail.list()
-    assert(#good == 0 and #bad == 1 and bad[1].why == row[2], row[2] .. ": " .. tostring(bad[1] and bad[1].why))
-  end
-end)
-trial("a broken file in the outbox doesn't stop a send", function()
-  os.execute("mkdir -p " .. quote(root .. "/outbox"))
-  lib.write(root .. "/outbox/100-aaaa.json", json.encode({ id = "100-aaaa", posted = 100 }))
-  local plain = rex.call
-  rex.call = function(method, args)
-    if method == "block.method" and args.method == "list_dir" and args.args.files then
-      local entries = {}
-      for _, name in ipairs(outbox_files()) do entries[#entries + 1] = { name = name } end
-      return { status = "ok", entries = entries }
-    end
-    return plain(method, args)
-  end
-  local id = mail.post({ to = "Helper", text = "hi" })
-  assert(io.open(root .. "/outbox/" .. id .. ".json"), "not queued")
-end)
-trial("broken lists the files the postman set aside", function()
-  local plain = rex.call
-  rex.call = function(method, args)
-    if method == "block.method" and args.method == "list_dir" then
-      return { status = "ok", entries = { { name = "100-aaaa.json.bad" }, { name = "200-bbbb.json" }, { name = "x.bad" } } }
-    end
-    return plain(method, args)
-  end
-  local b = mail.broken()
-  assert(#b == 1 and b[1] == root .. "/outbox/100-aaaa.json.bad", table.concat(b, " "))
+  -- A file that isn't JSON was edited by hand: one clear error names it.
+  lib.write(root .. "/outbox/100-aaaa.json", "nope")
+  local ok, err = pcall(here)
+  assert(not ok and err:find("^" .. (root .. "/outbox/100-aaaa.json"):gsub("%p", "%%%0") .. " isn't a message .*; delete it$"), tostring(err))
 end)
 trial("a write of a file someone deleted doesn't bring it back", function()
   os.execute("mkdir -p " .. quote(root .. "/outbox"))

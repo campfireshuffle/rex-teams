@@ -112,7 +112,7 @@ local function run(script, args)
   return ok, err
 end
 
--- Deliver the one queued message to an idle, empty prompt box.
+-- Deliver the one queued message to a receiver that's there.
 local function deliver()
   load()
   local P = real_dofile("skills/rex-teams/scripts/postman.lua")
@@ -123,7 +123,7 @@ local function deliver()
   local f = assert(io.open(tmp .. "/outbox/" .. name))
   local msg = json.decode(f:read("*a"))
   f:close()
-  local a = P.step(msg, { status = "idle", known = true, composer = { text = "" } }, os.time())
+  local a = P.step(msg, {}, os.time())
   assert(a.kind == "put", a.kind)
   pane.put(msg.to, a.text)
   pane.enter(msg.to)
@@ -271,14 +271,14 @@ local function full(m)
   for k, v in pairs({ seq = 0, head = "[from Chief", tail = "] ", text = "hi" }) do if m[k] == nil then m[k] = v end end
   return m
 end
-check("team.lua says how many messages wait for an agent, and why", function()
+check("team.lua says how many messages are queued on this host for an agent, and why", function()
   reset()
   load()
   local mail = real_dofile(lib.dir .. "mail.lua")
   os.execute("mkdir -p '" .. tmp .. "/outbox'")
   local to = { session = "session:me", block = "block:peer-00000-bbbbbb", name = "Helper" }
   local from = { session = "session:me", block = "block:me-000000-aaaaaa", name = "Chief" }
-  mail.write(full({ id = "100-aaaa", posted = 100, to = to, from = from, d = { tag = "100-aaaa", why = "there's text in its prompt box" } }))
+  mail.write(full({ id = "100-aaaa", posted = 100, to = to, from = from, d = { tag = "100-aaaa", why = "Rex can't reach it (timeout)" } }))
   mail.write(full({ id = "101-bbbb", posted = 101, to = to, from = from }))
   mail.write(full({ id = "102-cccc", posted = 102, to = to, from = from, dead = "gone" }))
   mail.write(full({ id = "103-dddd", posted = 103, to = to, from = from, notice = true }))
@@ -294,7 +294,7 @@ check("team.lua says how many messages wait for an agent, and why", function()
   end
   assert(run("team.lua", {}))
   local all = table.concat(printed, "\n")
-  assert(has(all, "block='block:peer-00000-bbbbbb' message='<message>'\n  (2 messages waiting: there's text in its prompt box)\n"
+  assert(has(all, "block='block:peer-00000-bbbbbb' message='<message>'\n  (2 messages queued on this host: Rex can't reach it (timeout))\n"
     .. "  (1 message not delivered; its sender was told)"), all)
 end)
 check("team.lua counts every sender's messages, and says a sender was told only when one was", function()
@@ -329,7 +329,7 @@ check("team.lua counts every sender's messages, and says a sender was told only 
   end
   assert(run("team.lua", {}))
   local all = table.concat(printed, "\n")
-  assert(has(all, "block='block:peer-00000-bbbbbb' message='<message>'\n  (1 message waiting)\n"
+  assert(has(all, "block='block:peer-00000-bbbbbb' message='<message>'\n  (1 message queued on this host)\n"
     .. "  (2 messages not delivered; their senders were told)\n"
     .. "  (1 message it sent itself not delivered)"), all)
   assert(not has(all, "its sender was told"), all)
@@ -340,28 +340,6 @@ check("team.lua counts every sender's messages, and says a sender was told only 
   assert(run("team.lua", {}))
   all = table.concat(printed, "\n")
   assert(has(all, "  (2 messages it sent itself not delivered)"), all)
-end)
-check("team.lua counts the broken files the postman set aside", function()
-  reset()
-  load()
-  local plain = servers[""].call
-  local entries = { { name = "100-aaaa.json.bad" } }
-  rex.call = function(method, args)
-    if method == "block.method" and args.method == "list_dir" then return { status = "ok", entries = entries } end
-    return plain(method, args)
-  end
-  assert(run("team.lua", {}))
-  local all = table.concat(printed, "\n")
-  assert(has(all, "(1 broken message set aside, not delivered: " .. tmp .. "/outbox/100-aaaa.json.bad)"), all)
-  entries[2] = { name = "101-bbbb.json.bad" }
-  printed = {}
-  assert(run("team.lua", {}))
-  all = table.concat(printed, "\n")
-  assert(has(all, "(2 broken messages set aside, not delivered: " .. tmp .. "/outbox/100-aaaa.json.bad, "), all)
-  entries = {}
-  printed = {}
-  assert(run("team.lua", {}))
-  assert(not has(table.concat(printed, "\n"), "broken"))
 end)
 check("two sends in one second are listed, and so delivered, in the order they were sent", function()
   reset()

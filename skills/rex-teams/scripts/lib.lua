@@ -2,6 +2,13 @@
 -- so they need nothing but rex.
 local lib = {}
 
+-- Refuse with WHY, a plain sentence, unless OK. Rex prints an assert's
+-- file and line; error(why, 0) prints just why.
+function lib.need(ok, why)
+  if not ok then error(why, 0) end
+  return ok
+end
+
 lib.windows = package.config:sub(1, 1) == "\\"
 lib.sep = lib.windows and "\\" or "/"
 lib.dir = debug.getinfo(1, "S").source:gsub("^@", ""):match("^(.*[/\\])")
@@ -75,9 +82,9 @@ end
 -- moves to another session, so look its session up instead of trusting an
 -- environment variable.
 function lib.me()
-  local block = assert(os.getenv("REX_BLOCK"), "run this inside a Rex terminal")
+  local block = lib.need(os.getenv("REX_BLOCK"), "run this inside a Rex terminal")
   local found = lib.call("target.resolve", { queries = { block }, kinds = { "block" } }).results[1]
-  assert(found.status == "resolved", "Rex can't find your pane " .. block .. " (" .. found.status .. ")")
+  lib.need(found.status == "resolved", "Rex can't find your pane " .. block .. " (" .. found.status .. ")")
   return found.target.session_id, found.target.block_id
 end
 
@@ -130,7 +137,7 @@ function lib.locate(session, block, paths)
       error("file " .. path .. ": " .. dir.status, 0)
     end
     -- The message is one line.
-    assert(not dir.path:find("[\r\n]"), "file " .. path .. ": a name with a line break can't go in a message")
+    lib.need(not dir.path:find("[\r\n]"), "file " .. path .. ": a name with a line break can't go in a message")
     found[#found + 1] = dir.path
   end
   return found

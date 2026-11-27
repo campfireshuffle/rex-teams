@@ -1,6 +1,6 @@
 # Architecture
 
-rex-teams is a few Lua scripts that Rex runs with `rex do`. Agents message each other by typing into each other's terminals. A message is queued as a file, and one postman per Rex host types it in when the receiver's prompt box is free, busy receiver or not.
+rex-teams is a few Lua scripts that Rex runs with `rex do`. Agents message each other by typing into each other's terminals. A message is queued as a file, and one postman per Rex host types it in: it pastes the message and presses Enter, busy receiver or not. Nothing reads the screen, so a half-written prompt or a dialog gets the message too (#41, #40).
 
 Three ideas cover it:
 
@@ -19,23 +19,21 @@ send.lua  alarm.lua  team.lua  spawn.lua        entry points: parse arguments, p
          |
      postman.lua (step, ensure, run)             the policy (step) and the worker
          |
-     pane.lua (look, put, enter, attach)         the one adapter over Rex's terminal calls
-         |
-     vendors.lua  +  vt.lua                      what each CLI's prompt box looks like; the screen reader
+     pane.lua (exists, put, enter, attach)       the one adapter over Rex's terminal calls
 ```
 
 | File | Job |
 |---|---|
 | `send.lua` | `mail.post` for a message; prints `queued message <id> for <name>`. |
 | `alarm.lua` | `mail.post` with `at` or `every`; `list=true` lists your alarms. |
-| `team.lua` | Lists agents with ready `send.lua` commands, how many messages wait for each, and the broken files set aside. |
+| `team.lua` | Lists agents with ready `send.lua` commands, and how many messages are queued on this host for each. |
 | `spawn.lua` | Starts a subagent. Its report is a `send.lua` command, so it's an ordinary message. |
-| `mail.lua` | `mail.post{to, host?, text, files?, at?, every?} -> id, name, hint`, `mail.list() -> messages, broken` and `mail.broken()`. Raises before queueing on bad input, including `every` under 3 s. |
-| `postman.lua` | `step(msg, look, now) -> action`, the pure delivery policy; `ensure()`, which starts the postman; and the worker loop. |
-| `pane.lua` | `look(addr)`, `put(addr, text)`, `enter(addr)`, `attach(addr, files, id)`. |
-| `vendors.lua` | The only file that names a CLI: each one's composer parser, placeholder rule and paste-token patterns. |
-| `vt.lua` | Turns Rex's `format=vt` output into styled cells. |
-| `lib.lua` | Addresses, headers, quoting, file copies across hosts. |
+| `mail.lua` | `mail.post{to, host?, text, files?, at?, every?} -> id, name` and `mail.list() -> messages`. Post raises before queueing on bad input, in a plain sentence. List raises, naming the file, on one that isn't JSON. |
+| `postman.lua` | `step(msg, check, now) -> action`, the pure delivery policy; `ensure()`, which starts the postman or raises; `rule()`, the trust rule; and the worker loop. |
+| `pane.lua` | `exists(addr)`, `put(addr, text)`, `enter(addr)`, `attach(addr, files, id)`. |
+| `lib.lua` | Addresses, headers, quoting, file copies across hosts, `need` for plain refusals. |
+
+No script names an agent CLI; `tests/lint.lua` checks.
 
 ## Request flows
 
@@ -49,35 +47,31 @@ agent ◄─ "queued message <id> for <name>"
 **Deliver**
 ```
 postman ─ outbox check (every 2 s) or a timer
-        ─ pane.look ─► { app, known, composer }
-        ─ step ─► hold     (a known CLI whose prompt box is hidden or has text in it)
-               └► put      ─ pane.put (paste "[from X · msg <id>, …] text") ─ pane.enter
-an unknown program, a shell too ─► put at once, then done
+        ─ each receiver's due messages, in posted order (posted, then seq)
+        ─ pane.exists ─► gone            ─► one notice to the sender; the file is kept, marked dead
+                      └► raises          ─► hold (Rex can't reach it): the rest of that receiver's queue waits, in order
+                      └► there           ─► attach files (another host) ─► save d.pasted_at ─► pane.put ─► pane.enter
+put and Enter went through ─► delete the file (a recurring alarm waits for its next tick)
+put or Enter raised        ─► one notice to the sender, with the error; the file is deleted, never pasted again
+a restart finds d.pasted_at ─► the same notice ("the postman stopped between its paste and its Enter"), deleted
 ```
 
-**Enter**
-```
-2 s after the paste, one look at a known CLI's prompt box
-    ours still there (same text, blanks aside, or one long-paste stand-in) ─► Enter once more ─► done
-    anything else ─► done
-done: delete the file (a recurring alarm waits for its next tick)
-```
+An alarm waiting for its next tick, or a one-shot not yet due, doesn't hold up the messages behind it.
 
 **Notice**
 ```
-held 10 minutes ─► one notice to the sender, as a message from "rex-teams postman"
 receiver gone, or files can't be copied ─► one notice, and the file is kept
-notices, and alarms you set yourself, never cause notices
+paste or Enter failed, or may not have finished ─► one notice, and the message is dropped
+notices, and messages you sent yourself, never cause notices
 ```
 
 **Alarm**
 ```
-alarm.lua ─► mail.post{at=…} or {every=…} ─► outbox
+alarm.lua ─► mail.post{at=…} or {every=…} ─► outbox     (in= and every= are any positive number)
 postman: timer to the due time ─► deliver as above
 one-shot due while the postman was down ─► "[late by Ns, Rex restarted]"
-recurring: every ≥ 3 s (a paste, then a look 2 s on); tick k at start + k·every, never drifting
-a due tick goes out however late (a draft, slow panes), unless a later tick is due too: then only the latest goes
-a tick due while the postman was down or the machine slept is skipped
+recurring: tick k at start + k·every, never drifting
+a due tick goes out however late; ticks that pile up (a restart, a sleep, an unreachable pane) collapse into the latest one
 ```
 
 **Spawn and report**
@@ -89,15 +83,14 @@ child  ─ (report.md's notify line) rex do send.lua block=<parent> … ─► a
 **Cross-host**
 ```
 send.lua host=ws ─► mail.post resolves the address on ws, writes the outbox here
-postman here ─ rex.server("ws") ─► look, put, enter on ws; rex cp the files into ws's inbox first
+postman here ─ rex.server("ws") ─► exists, put, enter on ws; rex cp the files into ws's inbox first
 ```
 
 ## Where state lives
 
 | Path | What |
 |---|---|
-| `/tmp/rex-teams/outbox/<id>.json` | A queued message and its delivery state. The postman rewrites it after each step and deletes it once delivered. Delete it to drop a message or cancel an alarm. A message whose receiver is gone, or whose files couldn't be copied, stays, marked `dead`. |
-| `/tmp/rex-teams/outbox/<id>.json.bad` | A queued file that isn't a message (not JSON, or a field missing or of the wrong type). The postman renames it once, says why in its own block, and never delivers it. `team.lua` lists it. |
+| `/tmp/rex-teams/outbox/<id>.json` | A queued message and its delivery state. Written whole (tmp + rename). The postman rewrites it after each step and deletes it once delivered or dropped. Delete it to drop a message or cancel an alarm. A message whose receiver is gone, or whose files couldn't be copied, stays, marked `dead`. A file that isn't JSON stops delivery, and the postman says once, in its block, to delete it. |
 | `/tmp/rex-teams/postman.json` | The running postman: its block, session and pid. |
 | `/tmp/rex-teams/postman.lock` | A `mkdir` lock while a postman claims `postman.json`. |
 | `/tmp/rex-teams/stage/<id>/` | Files on their way to another host, removed after the copy. |
@@ -114,13 +107,11 @@ If Rex grows a better API, this table says what to swap.
 
 | Part | Rex API | Could become |
 |---|---|---|
-| `pane.look` | `block.method program_status` (the app named with OSC 7501), `process` | the same |
-| `pane.look` | `block.method format` (vt), `size`, `blob_read`, parsed by `vendors.lua` | a Rex "unsent input" or composer API; then the parsers go |
-| `pane.look` | `target.resolve` for a pane that's gone | the same |
-| `pane.put`, `pane.enter` | `block.event` paste, then key Enter | a native queue (a CLI's or Rex's); then the look after the Enter goes |
+| `pane.exists` | `target.resolve` | the same |
+| `pane.put`, `pane.enter` | `block.event` paste, then key Enter | a native queue (a CLI's or Rex's), or a Rex "unsent input" signal; then #40 and #41 close |
 | `pane.attach` | `rex cp` (via `lib.send_files`) | the same |
 | postman timers | `rex.after` | the same |
-| postman restart | OSC 7577 report, trust rule over the scripts folder, `program_resume_records` | the same |
+| postman restart | OSC 7577 report, and the trust rule over the scripts folder that README.md quotes | the same |
 | postman singleton | `postman.json`, `mkdir` lock, `block.method process` for liveness | a Rex singleton or named service |
 | postman home | `session.list`, `session.create`, `session.new_block` (detached) | a Rex background service |
 | cross-host | `rex.server(label)` | the same |

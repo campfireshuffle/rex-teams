@@ -5,11 +5,10 @@
 --   rex do <skill>/scripts/alarm.lua list=true
 --
 -- The target defaults to the calling agent. An alarm is a queued message
--- with a time; the postman delivers it, as it does every message, once the
--- agent's prompt box is free. EVERY is at least 3 seconds; mail.post refuses
--- less. A tick goes out however late, unless the next one is due too: then
--- only the last one due goes. Ticks due while Rex was down are skipped.
--- Cancel one by deleting its file, which it prints.
+-- with a time; the postman delivers it as it does every message. A due tick
+-- goes out however late; ticks that pile up, while Rex was down or the
+-- machine slept, collapse into the latest one, and the schedule never
+-- drifts. Cancel one by deleting its file, which it prints.
 local dir = debug.getinfo(1, "S").source:gsub("^@", ""):match("^(.*[/\\])")
 local lib = dofile(dir .. "lib.lua")
 local mail = dofile(dir .. "mail.lua")
@@ -27,17 +26,17 @@ if a.list then
   return
 end
 
-local seconds = assert(a["in"] or a.every, "use in=SECONDS or every=SECONDS")
-assert(type(seconds) == "number" and seconds > 0 and not (a["in"] and a.every), "use one positive interval")
-local message = tostring(assert(a.message, "message is required"))
-assert(not message:find("[\r\n]"), "the message must be one line")
+local need = lib.need
+local seconds = a["in"] or a.every
+need(seconds ~= nil and not (a["in"] and a.every), "use in=SECONDS or every=SECONDS")
+need(type(seconds) == "number" and seconds > 0, (a.every and "every" or "in") .. " must be a positive number of seconds")
+need(a.message ~= nil, "message is required")
 -- The postman reports itself to Rex with sha256sum.
 if not lib.windows then
   local r = rex.exec({ "sh", "-c", "command -v sha256sum" })
-  assert(r and r.ok, "alarm.lua needs sha256sum (macOS 15+ or coreutils)")
+  need(r and r.ok, "alarm.lua needs sha256sum (macOS 15+ or coreutils)")
 end
 local _, me = lib.me()
-local id, name, hint = mail.post({ to = a.block and tostring(a.block) or me, text = message,
-  at = a["in"] and os.time() + a["in"], every = a.every, hint = true })
+local id, name = mail.post({ to = a.block and tostring(a.block) or me, text = tostring(a.message),
+  at = a["in"] and os.time() + a["in"], every = a.every })
 print("alarm: " .. id .. " for " .. name .. ". Cancel it with: rm " .. lib.quote(mail.file(id)))
-if hint then print(hint) end

@@ -4,9 +4,9 @@
 --
 -- With host=, a label from `rex hosts`, it lists every session on that host.
 -- Tabs prefixed with a possibly indented ↳ are subagents. Teammates are the other labeled tabs
--- and panes. An agent with messages still queued for it, from anyone, says how many, and why,
--- and how many the postman gave up on. Last, it names the broken message files
--- the postman set aside.
+-- and panes. An agent with messages queued on this host for it, from anyone, says how many,
+-- and why, and how many the postman gave up on. A sender on another host keeps its messages
+-- to you in its own outbox, so they aren't counted here.
 local dir = debug.getinfo(1, "S").source:gsub("^@", ""):match("^(.*[/\\])")
 local lib = dofile(dir .. "lib.lua")
 local mail = dofile(dir .. "mail.lua")
@@ -35,7 +35,7 @@ for _, s in ipairs(sessions) do
     print(lib.name(b) .. "  " .. (not host and b.id == me and "(you)" or lib.send_command(b.id, "<message>", host)))
     local q = queued[b.id]
     if q and q.n > 0 then
-      print("  (" .. q.n .. (q.n == 1 and " message" or " messages") .. " waiting" .. (q.why and ": " .. q.why or "") .. ")")
+      print("  (" .. q.n .. (q.n == 1 and " message" or " messages") .. " queued on this host" .. (q.why and ": " .. q.why or "") .. ")")
     end
     if q and q.told > 0 then
       print("  (" .. q.told .. (q.told == 1 and " message not delivered; its sender was told)"
@@ -53,9 +53,4 @@ for _, s in ipairs(sessions) do
       print("  worktree: " .. worktree.path)
     end
   end
-end
-local broken = mail.broken()
-if #broken > 0 then
-  print("(" .. #broken .. (#broken == 1 and " broken message" or " broken messages") .. " set aside, not delivered: "
-    .. table.concat(broken, ", ") .. ")")
 end

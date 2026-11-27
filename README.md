@@ -13,7 +13,7 @@ This is an unofficial community skill. It isn't made by or affiliated with Super
 
 Rex already gives agents everything this skill needs: tabs, terminal input, and the screen. `rex-teams` adds the habits on top. It sets out how a subagent reports back, and it starts every message with the command for replying. A message is typed into the other agent's terminal, so nobody polls.
 
-Messages are queued, and one postman per Rex host delivers them. It types a message in as soon as the receiver's prompt box is empty, even while the agent works, so it never types into your half-written prompt. If the Enter gets lost, it presses Enter once more. [ARCHITECTURE.md](ARCHITECTURE.md) explains how.
+Messages are queued, and one postman per Rex host delivers them. [ARCHITECTURE.md](ARCHITECTURE.md) explains how.
 
 ## Install
 
@@ -22,8 +22,16 @@ npx skills add campfireshuffle/rex-teams
 ```
 
 Requirements:
-- Rex 0.1.0-preview.25 or later 
+- Rex 0.1.0-preview.25 or later
 - `sha256sum` (macOS 15+ or coreutils) on macOS and Linux.
+
+So that the postman comes back after Rex restarts, add this line to Rex's `init.lua`, with your skill folder's path, and run `rex config reload`:
+
+```lua
+rex.set("resume.trust.rex-teams", { command = { "rex", "do", rex.match.under("<skill>/scripts") }, flags = { ["--args"] = { "keep", values = 1 } } })
+```
+
+Without it, queued messages and alarms are kept, and go out once the next message starts the postman.
 
 ## Usage patterns
 
@@ -49,11 +57,9 @@ Open agents in labeled tabs or panes, then talk to one:
 
 ## Limitations
 
-- The postman reads the prompt boxes of Claude Code, Codex, OpenCode and Pi. Any other program, a shell too, gets each message typed in at once, draft or not.
+- Messages are typed in as they arrive, into whatever the receiver shows: a half-written prompt or a dialog included. A lost Enter ([#40](https://github.com/campfireshuffle/rex-teams/issues/40)) and drafts ([#41](https://github.com/campfireshuffle/rex-teams/issues/41)) are open.
 - A busy agent gets a message mid-turn. Its CLI decides what to do with it.
-- An agent that asks you something in plain text, rather than in a dialog, can get a message while it waits for your answer.
-- The postman runs in a session labelled `rex-teams`. It comes back after a Rex restart only once you add the trust rule the scripts print; otherwise the next message starts it, and alarms wait until then. On Windows it doesn't come back.
-- A recurring alarm repeats every 3 seconds at the most often.
+- The postman runs in a session labelled `rex-teams`. It comes back after a Rex restart only with the trust rule above. On Windows it doesn't come back.
 - A subagent that crashes before reporting wakes nobody.
 - Messages are one-way. A reply across hosts works only if the receiver's `rex hosts` can reach the sender's host.
 - `spawn.lua` starts subagents only on your own host. You can message agents on other hosts and send them files, but not start them there yet ([#37](https://github.com/campfireshuffle/rex-teams/issues/37)).

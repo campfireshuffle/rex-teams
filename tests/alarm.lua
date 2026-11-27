@@ -12,7 +12,7 @@ local root = tmp .. "/rex-teams"
 local S
 local function reset()
   os.execute("rm -rf " .. quote(tmp))
-  S = { now = 1795671000, calls = {}, printed = {}, sha256sum = true, ensured = {}, hint = nil }
+  S = { now = 1795671000, calls = {}, printed = {}, sha256sum = true, ensured = {} }
 end
 os.time = function(t) if t then return real_time(t) end return S.now end
 os.getenv = function(k) if k == "REX_BLOCK" then return "block:agent" end return real_getenv(k) end
@@ -57,7 +57,7 @@ lib.root = root
 dofile = function(path)
   if path:match("/lib%.lua$") then return lib end
   if path:match("/postman%.lua$") then
-    return { ensure = function(hint) S.ensured[#S.ensured + 1] = hint or false return S.hint end }
+    return { ensure = function() S.ensured[#S.ensured + 1] = true end }
   end
   return real_dofile(path)
 end
@@ -106,7 +106,7 @@ trial("an alarm is a queued message to you, at an absolute time", function()
   assert(m.at == 1795671120 and not m.every and m.text == 'Check "CI" — ünïcode')
   assert(m.head == "[alarm you set" and m.tail == "] " and m.to.block == "block:agent" and m.to.session == "session:s")
   assert(S.printed[1] == "alarm: " .. m.id .. " for Agent. Cancel it with: rm " .. quote(root .. "/outbox/" .. m.id .. ".json"), S.printed[1])
-  assert(S.ensured[1] == true, "alarm.lua asks for the trust hint")
+  assert(#S.printed == 1 and S.ensured[1], "the postman wasn't ensured, or more was printed")
 end)
 trial("a recurring alarm stores its interval and start", function()
   set({ every = 60, message = "tick" })
@@ -126,29 +126,25 @@ trial("an alarm for another agent has the normal header", function()
   assert(m.to.block == "block:other" and m.head == "[from Agent" and m.tail:find("Reply by running: ", 1, true))
   assert(S.printed[1]:find(" for Marketer. ", 1, true), S.printed[1])
 end)
-trial("the trust hint is printed when the postman isn't trusted", function()
-  S.hint = "postman: Rex won't start the postman again after a restart. …"
-  set({ ["in"] = 5, message = "x" })
-  assert(S.printed[2] == S.hint, tostring(S.printed[2]))
-end)
 trial("a message with a newline is refused before anything exists", function()
-  fails("one line", function() set({ ["in"] = 5, message = "a\nb" }) end)
-  assert(#S.calls == 0)
+  fails("the message must be one line", function() set({ ["in"] = 5, message = "a\nb" }) end)
+  fails("the message is empty", function() set({ ["in"] = 5, message = "" }) end)
 end)
 trial("a bad interval is refused before anything exists", function()
   for _, args in ipairs({ { message = "x" }, { ["in"] = 0, message = "x" }, { ["in"] = -5, message = "x" },
-    { ["in"] = 5, every = 15, message = "x" }, { ["in"] = "soon", message = "x" } }) do
+    { ["in"] = 5, every = 15, message = "x" }, { ["in"] = "soon", message = "x" }, { every = 0, message = "x" } }) do
     reset()
-    local ok = pcall(set, args)
+    local ok, err = pcall(set, args)
     assert(not ok and #queued() == 0 and #S.calls == 0)
+    -- A plain sentence, without the script's file and line.
+    assert(not tostring(err):find("%.lua:%d"), err)
   end
+  fails("in must be a positive number of seconds", function() set({ ["in"] = "soon", message = "x" }) end)
+  fails("every must be a positive number of seconds", function() set({ every = -1, message = "x" }) end)
 end)
-trial("an interval under 3 seconds is refused, saying so", function()
-  -- Delivery takes about 2 s, so shorter ticks would be lost.
-  for _, every in ipairs({ 0.3, 1.5, 2.9 }) do
-    reset()
-    fails("every must be at least 3 seconds", function() set({ every = every, message = "fast" }) end)
-  end
+trial("any positive interval is taken, however short", function()
+  set({ every = 0.5, message = "fast" })
+  assert(queued()[1].every == 0.5)
 end)
 trial("a missing sha256sum stops the setter before anything exists", function()
   S.sha256sum = false
