@@ -470,6 +470,7 @@ trial("deleting a message cancels it: held, while its receiver is checked, or wh
 
   for _, when in ipairs({ "check", "copy" }) do
     reset()
+    for k, v in pairs(real_fake) do fake[k] = v end
     r = receiver("block:to")
     queue({ host = "ws", files = { "/w/a.md" } })
     fake[when == "check" and "exists" or "attach"] = function(addr)

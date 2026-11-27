@@ -1,16 +1,15 @@
 -- The postman delivers queued messages, one postman per Rex host. mail.lua
--- queues each message as /tmp/rex-teams/outbox/<id>.json, which also holds
--- its delivery state, and starts the postman if it isn't running, in a block
--- labelled "rex-teams postman". /tmp/rex-teams/postman.json names the one
--- that runs. Each pass reads the outbox again, so deleting a file cancels
--- its message. It tells Rex its command with OSC 7577, so a trust rule can
--- start it again after Rex restarts.
+-- writes each message to /tmp/rex-teams/outbox/<id>.json and starts the
+-- postman if none runs, in a block labelled "rex-teams postman". Every 2 s
+-- the postman reads the outbox again and delivers what's due, oldest first
+-- per receiver; deleting a file cancels its message. Each file also holds
+-- its message's delivery state, msg.d. postman.json names the postman that
+-- runs. It tells Rex its command with OSC 7577, so Rex can start it again.
 --
--- The save rule: a message is saved before each Rex call that acts on its
--- receiver, and its sender's notice is written before it's removed or
--- marked dead. Whatever raises leaves the file as it was, for the next pass.
---
--- Loaded with dofile, this file returns deliver, ensure and rule instead.
+-- The save rule: deliver saves a message before each Rex call that acts on
+-- its receiver, and writes its sender's notice before it removes the
+-- message or marks it dead. Whatever raises leaves the file as it was, and
+-- the next pass reads it again.
 local dir = debug.getinfo(1, "S").source:gsub("^@", ""):match("^(.*[/\\])")
 local lib = dofile(dir .. "lib.lua")
 local mail = dofile(dir .. "mail.lua")
@@ -18,11 +17,13 @@ local pane = dofile(dir .. "pane.lua")
 local M = {}
 M.script = dir .. "postman.lua"
 
-M.poll = 2 -- seconds between checks of the outbox and of receivers Rex can't reach
+M.poll = 2 -- seconds between passes
+
+-- Delivery -------------------------------------------------------------
 
 -- The last tick of a recurring alarm due at NOW, 0 before the first. Tick
--- k falls at start + k*every. os.time() is whole seconds, so a tick may be
--- up to 1s late, never early.
+-- k falls at start + k*every. The two checks undo float rounding, so a
+-- tick is never early.
 local function last_tick(msg, now)
   local k = math.max(0, math.floor((now - msg.start) / msg.every))
   if msg.start + (k + 1) * msg.every <= now then k = k + 1 end
@@ -30,8 +31,37 @@ local function last_tick(msg, now)
   return k
 end
 
--- Tell MSG's sender WHAT happened to it. Notices, and messages you sent
--- yourself, never cause notices; a notice's receiver has no name.
+local function next_tick(msg)
+  return msg.start + ((msg.k or 0) + 1) * msg.every
+end
+
+-- Nil if MSG is due at NOW, else when it will be. A due message has msg.d,
+-- with the tag its paste carries. The tick rule: a recurring alarm sends
+-- its last due tick however late, ticks that pile up collapse into the
+-- latest due one, and the schedule never drifts.
+local function due(msg, now)
+  if not msg.every then
+    if msg.d then return nil end
+    local at = msg.at or msg.posted
+    if now < at then return at end
+    msg.d = { tag = msg.id }
+    if msg.late then msg.d.note = " [late by " .. msg.late .. "s, Rex restarted]" end
+    return nil
+  end
+  -- A tick that's been pasted is finished as it is, never retagged.
+  if msg.d and msg.d.pasted_at then return nil end
+  local k = last_tick(msg, now)
+  if k > (msg.k or 0) then
+    msg.k = k
+    msg.d = msg.d or {}
+    msg.d.tag = msg.id .. "." .. k
+  end
+  if msg.d then return nil end
+  return next_tick(msg)
+end
+
+-- Tell MSG's sender WHAT happened to it. The notice rule: never for a
+-- notice, whose receiver has no name, or for a message to yourself.
 local function tell(msg, what)
   if msg.notice then return end
   if msg.to.host == nil and msg.to.block == msg.from.block then return end
@@ -45,9 +75,9 @@ local function give_up(msg, why, what)
   mail.write(msg, true)
 end
 
--- MSG's paste is over and is never tried again. ERR, if set, is why it may
--- not have arrived. A recurring alarm drops only this tick: it keeps its
--- file and returns when its next tick is due.
+-- MSG's paste is over, and is never tried again. ERR, if set, is why it
+-- may not have arrived. A recurring alarm drops only this tick and returns
+-- when its next is due.
 local function finish(msg, err)
   if err then
     print("postman: " .. msg.id .. " may not have arrived: " .. err)
@@ -59,72 +89,53 @@ local function finish(msg, err)
   end
   msg.d = nil
   mail.write(msg, true)
-  return msg.due
+  return next_tick(msg)
 end
 
--- Deliver MSG as far as it can go at NOW, os.time(). Returns when to try it
--- again, or nil when nothing is left to do: it was delivered, given up on,
--- or deleted by its sender. MSG.d, its delivery state, is set once it's due.
+-- Deliver MSG as far as it can go at NOW, os.time(). Returns when to try
+-- it again, or nil when it's over: delivered, given up on, or deleted by
+-- its sender.
 function M.deliver(msg, now)
-  -- Due. A recurring alarm sends its last due tick, however late; ticks
-  -- that pile up collapse into the latest one, and the schedule never
-  -- drifts.
-  if msg.every and not (msg.d and msg.d.pasted_at) then
-    local k = last_tick(msg, now)
-    if k > (msg.k or 0) then
-      msg.k = k
-      msg.d = msg.d or {}
-      msg.d.tag = msg.id .. "." .. k
-    end
-    msg.due = msg.start + ((msg.k or 0) + 1) * msg.every
-    if not msg.d then return msg.due end
-  elseif not msg.d then
-    local due = msg.at or msg.posted
-    if now < due then return due end
-    msg.d = { tag = msg.id }
-    if msg.late then msg.d.note = " [late by " .. msg.late .. "s, Rex restarted]" end
-  end
+  local wait = due(msg, now)
+  if wait then return wait end
   local d = msg.d
 
-  -- A paste found on disk was cut short: the postman stopped before it
-  -- could finish.
   if d.pasted_at then return finish(msg, "the postman stopped between its paste and its Enter") end
 
-  -- The receiver must be there. It's checked again after copying files,
-  -- which can take a while.
-  repeat
-    local ok, there = pcall(pane.exists, msg.to)
-    if not ok then
-      -- Held, never given up on. Saved, so later passes keep the rest of
-      -- its receiver's queue behind it, and team.lua can say why.
+  -- The receiver must be there. It's checked again after its files are
+  -- copied, which can take a while.
+  while true do
+    local reached, there = pcall(pane.exists, msg.to)
+    if not reached then
+      -- Held, never given up on. Saved for team.lua to say why, and so a
+      -- copy that's done isn't done again.
       d.why = "Rex can't reach it (" .. tostring(there) .. ")"
+      mail.write(msg, true)
       return now + M.poll
     end
     if not there then
       give_up(msg, "gone", "can't be delivered: that pane is gone")
       return nil
     end
-    local copy = msg.files and not d.attached
-    if copy then
-      if not mail.write(msg, true) then return nil end
-      local copied, err = pcall(pane.attach, msg.to, msg.files, msg.id)
-      if not copied then
-        give_up(msg, "files", "wasn't sent: " .. tostring(err))
-        return nil
-      end
-      d.attached = true
+    if not msg.files or d.attached then break end
+    if not mail.write(msg, true) then return nil end
+    local copied, err = pcall(pane.attach, msg.to, msg.files, msg.id)
+    if not copied then
+      give_up(msg, "files", "wasn't sent: " .. tostring(err))
+      return nil
     end
-  until not copy
+    d.attached = true
+  end
 
-  -- Saved before the paste, so a restart never pastes it twice.
+  -- Saved first, so a postman that stops mid-paste never pastes it again.
   d.why = nil
   d.pasted_at = now
   if not mail.write(msg, true) then return nil end
   local text = msg.head .. " · msg " .. d.tag .. msg.tail .. msg.text .. (d.note or "")
   local ok, err = pcall(pane.put, msg.to, text)
   if ok then ok, err = pcall(pane.enter, msg.to) end
-  if ok then return finish(msg) end
-  return finish(msg, tostring(err))
+  if not ok then return finish(msg, tostring(err)) end
+  return finish(msg)
 end
 
 -- Singleton ------------------------------------------------------------
@@ -265,11 +276,9 @@ function M.run()
   local started = os.time()
   print("postman: delivering " .. mail.dir())
 
-  -- When to try each message next, by id; one not here is due now.
-  local wake, said = {}, nil
+  local said -- the error the last pass stopped on
   local function pass()
-    -- Sleep until the next thing is due, and at most until the next check
-    -- of the outbox.
+    -- The next pass comes when something is due, and at most M.poll from now.
     local next_at = os.time() + M.poll
     local ok, err = pcall(function()
       local queues = {}
@@ -281,31 +290,31 @@ function M.run()
       for _, queue in pairs(queues) do
         for _, msg in ipairs(queue) do
           if not msg.dead then
-            local now = os.time()
-            if (wake[msg.id] or 0) <= now then
-              -- A one-shot already due when this postman started was due
-              -- while Rex, or the postman, was down.
-              if msg.at and not msg.d and msg.at <= started - 1 then msg.late = started - msg.at end
-              local done, at = pcall(M.deliver, msg, now)
-              if not done then
-                -- Its file is as it was, so the next pass tries it again,
-                -- before the rest of its queue.
-                print("postman: " .. msg.id .. ": " .. tostring(at))
-                break
-              end
-              wake[msg.id] = at
+            -- A one-shot already due when this postman started was due
+            -- while Rex, or the postman, was down.
+            if msg.at and not msg.d and msg.at <= started - 1 then msg.late = started - msg.at end
+            local delivered, at = pcall(M.deliver, msg, os.time())
+            if not delivered then
+              -- Its file is as it was, so the next pass tries it again,
+              -- before the rest of its queue.
+              print("postman: " .. msg.id .. ": " .. tostring(at))
+              break
             end
-            if wake[msg.id] then next_at = math.min(next_at, wake[msg.id]) end
-            -- A message that has begun and isn't over holds the rest of its
+            if at then next_at = math.min(next_at, at) end
+            -- A message that's due and isn't over holds the rest of its
             -- receiver's queue, so they arrive in order.
-            if wake[msg.id] and msg.d then break end
+            if at and msg.d then break end
           end
         end
       end
     end)
     -- A file someone broke stops every pass until it's deleted: say so once.
-    if not ok and err ~= said then print("postman: " .. tostring(err)) end
-    said = not ok and err or nil
+    if ok then
+      said = nil
+    elseif err ~= said then
+      print("postman: " .. tostring(err))
+      said = err
+    end
     rex.after(math.max(0, next_at - os.time()), pass)
   end
 
