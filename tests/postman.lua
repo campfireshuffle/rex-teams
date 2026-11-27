@@ -25,7 +25,11 @@ os.remove(tmp)
 local root = tmp .. "/rex-teams"
 
 local S -- the mock world
+local fake, real_fake, mail, real_mail, P, real_P = {}, {}, nil, {}, nil, {}
 local function reset()
+  for k, v in pairs(real_fake) do fake[k] = v end
+  for k, v in pairs(real_mail) do mail[k] = v end
+  for k, v in pairs(real_P) do P[k] = v end
   os.execute("rm -rf " .. quote(tmp))
   os.execute("mkdir -p " .. quote(root))
   S = {
@@ -101,7 +105,6 @@ rex = {
 -- Fake receivers in place of pane.lua. Each check takes the next entry of
 -- the receiver's script, and the last entry stays: "up", "down" (raises,
 -- as a Rex call to a host that's down does) or "gone".
-local fake = {}
 function fake.exists(addr)
   local r = S.receivers[addr.block]
   if not r then return false end
@@ -125,7 +128,6 @@ function fake.enter(addr)
   end
 end
 function fake.attach(addr) S.receivers[addr.block].copies = S.receivers[addr.block].copies + 1 end
-local real_fake = {}
 for k, v in pairs(fake) do real_fake[k] = v end
 local function receiver(block, script)
   local r = { script = script or { "up" }, puts = {}, delivered = {}, enters = 0, checks = {}, copies = 0 }
@@ -136,7 +138,6 @@ end
 
 local lib = real_dofile("skills/rex-teams/scripts/lib.lua")
 lib.root = root
-local mail
 dofile = function(path)
   if path:match("/lib%.lua$") then return lib end
   if path:match("/pane%.lua$") then return fake end
@@ -144,10 +145,8 @@ dofile = function(path)
   return real_dofile(path)
 end
 mail = real_dofile("skills/rex-teams/scripts/mail.lua")
-local real_mail = {}
 for k, v in pairs(mail) do real_mail[k] = v end
-local P = real_dofile("skills/rex-teams/scripts/postman.lua")
-local real_P = {}
+P = real_dofile("skills/rex-teams/scripts/postman.lua")
 for k, v in pairs(P) do real_P[k] = v end
 
 -- Run the clock to T (real time, fractional), firing timers in order.
@@ -202,9 +201,6 @@ local function trial(name, f)
   print = function(...) S.printed[#S.printed + 1] = table.concat({ ... }, "\t") end
   local ok, err = pcall(f)
   print = real_print
-  for k, v in pairs(real_fake) do fake[k] = v end
-  for k, v in pairs(real_mail) do mail[k] = v end
-  for k, v in pairs(real_P) do P[k] = v end
   if not ok then failed = failed + 1 end
   lib.windows = false
   real_print((ok and "ok " or "not ok ") .. n .. " - " .. name .. (ok and "" or ": " .. tostring(err)))
@@ -324,7 +320,7 @@ trial("messages to one receiver go in the order they were posted, all in one pas
   assert(texts(r.delivered):gsub("%[[^]]*%] ", "") == "first | second | third", texts(r.delivered))
   assert(#queued() == 0)
 end)
-trial("a receiver Rex can't reach holds its queue in order, and nobody is told", function()
+trial("a receiver Rex can't reach holds its queue, and nobody is told; when it's back they arrive in order", function()
   local r = receiver("block:to", { "down" })
   local me = receiver("block:me")
   queue({ id = "1795671000-aaaa", text = "first" })
@@ -332,18 +328,11 @@ trial("a receiver Rex can't reach holds its queue in order, and nobody is told",
   start()
   run_to(S.t + 1200)
   assert(#r.puts == 0 and #me.puts == 0 and #queued() == 2, #me.puts)
-  r.script = { "up" }
-  run_to(S.t + 3)
-  assert(texts(r.delivered):gsub("%[[^]]*%] ", "") == "first | second", texts(r.delivered))
-  assert(#queued() == 0)
-end)
-trial("a receiver that's down for one check, then up, still gets its messages in order", function()
-  local r = receiver("block:to", { "down", "up" })
-  queue({ id = "1795671000-aaaa", text = "first" })
-  queue({ id = "1795671000-bbbb", text = "second", seq = 1 })
-  start()
+  -- Back between its two checks in one pass: the second may not pass the first.
+  r.script = { "down", "up" }
   run_to(S.t + 5)
   assert(texts(r.delivered):gsub("%[[^]]*%] ", "") == "first | second", texts(r.delivered))
+  assert(#queued() == 0)
 end)
 trial("an alarm waiting for its next tick, a one-shot not yet due, or a dead message doesn't hold up later messages", function()
   local me = receiver("block:me")
@@ -470,7 +459,6 @@ trial("deleting a message cancels it: held, while its receiver is checked, or wh
 
   for _, when in ipairs({ "check", "copy" }) do
     reset()
-    for k, v in pairs(real_fake) do fake[k] = v end
     r = receiver("block:to")
     queue({ host = "ws", files = { "/w/a.md" } })
     fake[when == "check" and "exists" or "attach"] = function(addr)
@@ -610,7 +598,7 @@ trial("after a sleep, the ticks that piled up collapse into one catch-up tick", 
   assert(#me.puts == 2 and me.puts[2].t == 1795671660 and me.puts[2].text:find("abcd.11]", 1, true))
 end)
 trial("fractional and short recurring alarms fire on their phase, never early or twice", function()
-  for _, every in ipairs({ 0.5, 2.5, 3.3, 10.5 }) do
+  for _, every in ipairs({ 0.5, 1.1, 2.5, 3.3, 10.5 }) do
     reset()
     local me = receiver("block:me")
     S.t, S.now = 1795671000.7, 1795671000
@@ -619,7 +607,7 @@ trial("fractional and short recurring alarms fire on their phase, never early or
     start()
     for _ = 1, 4000 do
       run_to(S.t + 0.05)
-      if #me.puts >= 12 then break end
+      if #me.puts >= 12 and S.t > 1795671040 then break end
     end
     assert(#me.puts >= 12, every .. ": " .. #me.puts .. " ticks")
     local last
@@ -703,6 +691,28 @@ trial("a held tick goes out however late, and one held past the next tick is ove
   run_to(1795671051)
   assert(#me.puts == 3 and me.puts[3].t == 1795671050 and me.puts[3].text:find("msg 1795671000-abcd.5]", 1, true), texts(me.puts))
 end)
+trial("a tick cut short by a stop is reported as that tick, and the tick due by the restart still goes out", function()
+  local r = receiver("block:to")
+  local me = receiver("block:me")
+  queue({ every = 10 })
+  local file, outbox = root .. "/outbox/1795671000-abcd.json", nil
+  fake.put = function(addr, text)
+    local f = assert(io.open(file))
+    outbox = f:read("*a")
+    f:close()
+    return real_fake.put(addr, text)
+  end
+  start()
+  run_to(S.t + 11)
+  fake.put = real_fake.put
+  -- It stopped during tick 1's paste, and starts again after tick 2 is due.
+  lib.write(file, outbox)
+  S.t, S.now = 1795671025, 1795671025
+  start()
+  run_to(S.t + 1)
+  assert(texts(me.puts):find("Message 1795671000-abcd.1 to Reviewer may not have arrived: the postman stopped", 1, true), texts(me.puts))
+  assert(#r.puts == 2 and r.puts[2].text:find("msg 1795671000-abcd.2,", 1, true), texts(r.puts))
+end)
 trial("a failed recurring tick drops only that tick: its sender hears once, even after a restart", function()
   local r = receiver("block:to")
   local me = receiver("block:me")
@@ -757,7 +767,6 @@ trial("a Rex call or a write that raises once loses, doubles and misorders nothi
   for _, fault in ipairs(faults) do
     for case, o in pairs(cases) do
       reset()
-      for k, v in pairs(real_fake) do fake[k] = v end
       local r = receiver("block:to")
       local me = receiver("block:me")
       queue(o)

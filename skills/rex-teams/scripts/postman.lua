@@ -22,12 +22,11 @@ M.poll = 2 -- seconds between passes
 -- Delivery -------------------------------------------------------------
 
 -- The last tick of a recurring alarm due at NOW, 0 before the first. Tick
--- k falls at start + k*every. The two checks undo float rounding, so a
--- tick is never early.
+-- k falls at start + k*every.
 local function last_tick(msg, now)
   local k = math.max(0, math.floor((now - msg.start) / msg.every))
+  -- The division can round down: 33 / 1.1 gives 29.999...
   if msg.start + (k + 1) * msg.every <= now then k = k + 1 end
-  if k > 0 and msg.start + k * msg.every > now then k = k - 1 end
   return k
 end
 
@@ -61,9 +60,8 @@ local function due(msg, now)
 end
 
 -- Tell MSG's sender WHAT happened to it. The notice rule: never for a
--- notice, whose receiver has no name, or for a message to yourself.
+-- message to yourself. A notice is to its sender too, so it never causes one.
 local function tell(msg, what)
-  if msg.notice then return end
   if msg.to.host == nil and msg.to.block == msg.from.block then return end
   mail.notice(msg.from, "Message " .. msg.d.tag .. " to " .. msg.to.name .. " " .. what)
 end
@@ -128,7 +126,6 @@ function M.deliver(msg, now)
   end
 
   -- Saved first, so a postman that stops mid-paste never pastes it again.
-  d.why = nil
   d.pasted_at = now
   if not mail.write(msg, true) then return nil end
   local text = msg.head .. " · msg " .. d.tag .. msg.tail .. msg.text .. (d.note or "")
