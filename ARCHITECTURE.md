@@ -17,7 +17,7 @@ send.lua  alarm.lua  team.lua  spawn.lua        entry points: parse arguments, p
          |
      outbox/<id>.json                            one file per message
          |
-     postman.lua (step, ensure, run)             the policy (step) and the worker
+     postman.lua (deliver, ensure, run)          delivery (deliver) and the worker
          |
      pane.lua (exists, put, enter, attach)       the one adapter over Rex's terminal calls
 ```
@@ -29,7 +29,7 @@ send.lua  alarm.lua  team.lua  spawn.lua        entry points: parse arguments, p
 | `team.lua` | Lists agents with ready `send.lua` commands, and the branch and worktree of each agent in a linked worktree. |
 | `spawn.lua` | Starts a subagent. Its report is a `send.lua` command, so it's an ordinary message. |
 | `mail.lua` | `mail.post{to, host?, text, files?, at?, every?} -> id, name` and `mail.list() -> messages`. Post checks the text, the receiver and the files, and raises before queueing, in a plain sentence; `send.lua` and `alarm.lua` check their own arguments. List raises, naming the file, on one that isn't JSON. |
-| `postman.lua` | `step(msg, check, now) -> action`, the pure delivery policy; `ensure()`, which starts the postman or raises; `rule()`, the trust rule; and the worker loop. |
+| `postman.lua` | `deliver(msg, now) -> next wake`, which takes one message as far as it can go (Rex calls, outbox writes, notices) and returns when to try it again, or nil once it's over; `ensure()`, which starts the postman or raises; and the worker loop. |
 | `pane.lua` | `exists(addr)`, `put(addr, text)`, `enter(addr)`, `attach(addr, files, id)`. |
 | `lib.lua` | Addresses, headers, quoting, file copies across hosts, `need` for plain refusals. |
 
@@ -93,7 +93,7 @@ postman here ─ rex.server("ws") ─► exists, put, enter on ws; rex cp the fi
 
 | Path | What |
 |---|---|
-| `/tmp/rex-teams/outbox/<id>.json` | A queued message and its delivery state. Written whole (tmp + rename). The postman rewrites it after each step and deletes it once delivered or dropped. Delete it to drop a message or cancel an alarm. A message whose receiver is gone, or whose files couldn't be copied, stays, marked `dead`. A file that isn't JSON stops delivery, and the postman says once, in its block, to delete it. |
+| `/tmp/rex-teams/outbox/<id>.json` | A queued message and its delivery state. Written whole (tmp + rename). The postman saves its delivery state in it before each copy or paste, and deletes it once delivered or dropped. Delete it to drop a message or cancel an alarm. A message whose receiver is gone, or whose files couldn't be copied, stays, marked `dead`. A file that isn't JSON stops delivery, and the postman says once, in its block, to delete it. |
 | `/tmp/rex-teams/postman.json` | The running postman: its block and pid. |
 | `/tmp/rex-teams/postman.lock` | A `mkdir` lock while a postman claims `postman.json`. |
 | `/tmp/rex-teams/stage/<id>/` | Files on their way to another host, removed after the copy. |
