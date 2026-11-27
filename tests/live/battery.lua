@@ -8,7 +8,8 @@
 -- message names a sender that isn't an agent. With host=, it also sends a
 -- message, and one with a file, to a Pi in a scratch session on that host.
 -- It closes everything it opened, including any postman it started, and
--- prints a table.
+-- prints a table. It exits non-zero if any scenario FAILs, it stops early,
+-- or it can't close the postman it started.
 --
 -- It uses the postman in this checkout, so stop any other postman first
 -- (see /tmp/rex-teams/postman.json).
@@ -225,10 +226,20 @@ if not ok then print("battery stopped: " .. tostring(err)) end
 -- Clean up: the scratch sessions, and the postman if this run started it.
 call("session.destroy", { session_id = session })
 local after = postman()
+local unclosed
 if after and (not before or after.block ~= before.block) then
-  pcall(call, "session.attach", { session_id = after.session })
-  pcall(call, "block.close", { session_id = after.session, block_id = after.block })
-  print("closed the postman this run started: " .. after.block)
+  -- postman.json holds only the block and pid, so ask Rex for its session.
+  local closed, why = pcall(function()
+    local found = call("target.resolve", { queries = { after.block }, kinds = { "block" } }).results[1]
+    if found.status ~= "resolved" then error("Rex can't find it (" .. found.status .. ")", 0) end
+    call("session.attach", { session_id = found.target.session_id })
+    call("block.close", { session_id = found.target.session_id, block_id = found.target.block_id })
+  end)
+  if closed then print("closed the postman this run started: " .. after.block)
+  else
+    unclosed = "couldn't close the postman this run started, " .. after.block .. ": " .. tostring(why)
+    print(unclosed)
+  end
 end
 if cleanup.far then pcall(call, "session.destroy", { session_id = cleanup.far }, a.host) end
 print("")
@@ -243,4 +254,12 @@ for _, name in ipairs(order) do
 end
 for _, name in ipairs({ "cross-host", "cross-host file=" }) do
   for k, v in pairs(results[name] or {}) do print("| " .. name .. " | " .. k .. ": " .. v .. " |") end
+end
+
+local failed = 0
+for _, row in pairs(results) do
+  for _, v in pairs(row) do if v:find("^FAIL") then failed = failed + 1 end end
+end
+if not ok or failed > 0 or unclosed then
+  error(("battery failed: %d FAIL%s%s"):format(failed, ok and "" or ", stopped early", unclosed and ", postman left open" or ""), 0)
 end

@@ -11,7 +11,7 @@ This is an unofficial community skill. It isn't made by or affiliated with Super
 > [!TIP]
 > I expect Rex to do this better itself one day. When it does, delete the skill.
 
-Rex already gives agents everything this skill needs: tabs, terminal input, and the screen. `rex-teams` adds the habits on top. It sets out how a subagent reports back, and it starts every message with the command for replying. A message is typed into the other agent's terminal, so nobody polls.
+Rex already gives agents everything this skill needs: tabs and terminal input. `rex-teams` adds the habits on top. It sets out how a subagent reports back, and it starts every message with the command for replying. A message is typed into the other agent's terminal, so nobody polls.
 
 Messages are queued, and one postman per Rex host delivers them. [ARCHITECTURE.md](ARCHITECTURE.md) explains how.
 

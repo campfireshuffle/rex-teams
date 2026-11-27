@@ -13,7 +13,7 @@ Three ideas cover it:
 ```
 send.lua  alarm.lua  team.lua  spawn.lua        entry points: parse arguments, print results
     \        |          |
-     mail.lua (post, list)                       validate, resolve the address, queue, wake the postman
+     mail.lua (post, list)                       validate, resolve the address, start the postman if it isn't running, queue
          |
      outbox/<id>.json                            one file per message
          |
