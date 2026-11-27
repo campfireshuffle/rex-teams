@@ -4,8 +4,9 @@
 --   rex do <skill>/scripts/alarm.lua every=SECONDS message='MESSAGE' [block=BLOCK]
 --   rex do <skill>/scripts/alarm.lua list=true
 --
--- The target defaults to the calling agent. An alarm is a queued message
--- with a time; the postman delivers it as it does every message. A due tick
+-- The target defaults to the calling agent. Alarms reach this host only, so
+-- host= is refused. An alarm is a queued message with a time; the postman
+-- delivers it as it does every message. A due tick
 -- goes out however late; ticks that pile up, while Rex was down or the
 -- machine slept, collapse into the latest one, and the schedule never
 -- drifts. Cancel one by deleting its file, which it prints.
@@ -13,6 +14,8 @@ local dir = debug.getinfo(1, "S").source:gsub("^@", ""):match("^(.*[/\\])")
 local lib = dofile(dir .. "lib.lua")
 local mail = dofile(dir .. "mail.lua")
 local a = rex.args
+local need = lib.need
+need(a.host == nil, "alarms reach this host only")
 
 if a.list then
   local _, me = lib.me()
@@ -26,7 +29,6 @@ if a.list then
   return
 end
 
-local need = lib.need
 local seconds = a["in"] or a.every
 need(seconds ~= nil and not (a["in"] and a.every), "use in=SECONDS or every=SECONDS")
 need(type(seconds) == "number" and seconds > 0, (a.every and "every" or "in") .. " must be a positive number of seconds")
