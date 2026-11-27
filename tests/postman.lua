@@ -436,6 +436,22 @@ trial("a failed paste or Enter is reported to its sender once, and never pasted 
     assert(#queued() == 0, fail .. ": still queued: " .. table.concat(queued(), " "))
   end
 end)
+trial("a postman that stops while telling the sender of a failed paste still tells them, once", function()
+  local r = receiver("block:to")
+  local me = receiver("block:me")
+  queue({})
+  local put, id = fake.put, lib.id
+  fake.put = function(addr, text) if addr.block == "block:to" then error("rex: block.event timed out", 0) end return put(addr, text) end
+  -- The postman stops as it writes the notice.
+  lib.id = function() error("postman stopped", 0) end
+  pcall(start)
+  fake.put, lib.id = put, id
+  S.timers = {}
+  start()
+  run_to(S.t + 30)
+  assert(#me.puts == 1 and me.puts[1].text:find("Message 1795671000-abcd to Reviewer may not have arrived", 1, true), #me.puts .. " notices")
+  assert(#r.puts == 0 and #queued() == 0, "pasted again or kept")
+end)
 trial("a restart between the paste and the Enter is reported to the sender, and nothing is pasted again", function()
   local r = receiver("block:to")
   local me = receiver("block:me")
@@ -456,6 +472,64 @@ trial("a message deleted while its files are copied is never pasted", function()
   run_to(S.t + 30)
   fake.attach = function() end
   assert(#r.puts == 0 and #queued() == 0, #r.puts)
+end)
+trial("a failed file copy is never pasted: its sender hears once, and the file is kept", function()
+  local r = receiver("block:to")
+  local me = receiver("block:me")
+  queue({ host = "ws", files = { "/w/a.md" } })
+  fake.attach = function() error("rex cp failed", 0) end
+  start()
+  run_to(S.t + 30)
+  fake.attach = function() end
+  assert(#r.puts == 0, "pasted after a failed copy")
+  assert(#me.puts == 1 and me.puts[1].text:find("wasn't sent: rex cp failed", 1, true), me.puts[1] and me.puts[1].text)
+  local m = read_msg("1795671000-abcd")
+  assert(m and m.dead == "files")
+end)
+trial("the receiver is checked again after the copy: gone keeps the message, unreachable holds it", function()
+  local r = receiver("block:to")
+  local me = receiver("block:me")
+  queue({ host = "ws", files = { "/w/a.md" } })
+  fake.attach = function() S.receivers["block:to"] = nil end
+  start()
+  run_to(S.t + 30)
+  assert(#r.puts == 0 and #me.puts == 1 and me.puts[1].text:find("that pane is gone", 1, true), me.puts[1] and me.puts[1].text)
+  local m = read_msg("1795671000-abcd")
+  assert(m and m.dead == "gone", "not kept as gone")
+
+  reset()
+  r = receiver("block:to")
+  me = receiver("block:me")
+  queue({ host = "ws", files = { "/w/a.md" } })
+  local copies = 0
+  fake.attach = function() copies = copies + 1 r.unreachable = true end
+  start()
+  run_to(S.t + 30)
+  assert(#r.puts == 0 and #me.puts == 0 and #queued() == 1, "pasted or dropped while unreachable")
+  r.unreachable = false
+  run_to(S.t + 3)
+  fake.attach = function() end
+  assert(#r.delivered == 1 and copies == 1 and #queued() == 0, #r.delivered .. " delivered, " .. copies .. " copies")
+end)
+trial("a postman that stops while telling the sender a message can't go still tells them", function()
+  for _, case in ipairs({ "gone", "files" }) do
+    reset()
+    local me = receiver("block:me")
+    if case == "gone" then queue({ to = "block:gone" }) else receiver("block:to") queue({ host = "ws", files = { "/w/a.md" } }) end
+    local id = lib.id
+    fake.attach = function() error("rex cp failed", 0) end
+    -- The postman stops as it writes the notice.
+    lib.id = function() error("postman stopped", 0) end
+    pcall(start)
+    lib.id = id
+    S.timers = {}
+    start()
+    run_to(S.t + 30)
+    fake.attach = function() end
+    assert(#me.puts >= 1, case .. ": the sender wasn't told")
+    local m = read_msg("1795671000-abcd")
+    assert(m and m.dead == case, case .. ": not kept")
+  end
 end)
 trial("deleting a held message drops it", function()
   local r = receiver("block:to", { unreachable = true })
@@ -646,6 +720,41 @@ trial("a recurring alarm held past its next tick sends the last tick due once Re
   assert(#me.puts == 1 and me.puts[1].text:find("msg 1795671000-abcd.3]", 1, true), me.puts[1] and me.puts[1].text)
   run_to(1795671045)
   assert(#me.puts == 2 and me.puts[2].t == 1795671040 and me.puts[2].text:find("msg 1795671000-abcd.4]", 1, true), me.puts[2] and me.puts[2].text)
+end)
+trial("a failed recurring tick is saved: after a restart its sender isn't told again", function()
+  local r = receiver("block:to")
+  local me = receiver("block:me")
+  queue({ every = 60 })
+  local put = fake.put
+  fake.put = function(addr, text) if addr.block == "block:to" then error("rex: block.event timed out", 0) end return put(addr, text) end
+  start()
+  run_to(S.t + 65)
+  fake.put = put
+  assert(#me.puts == 1 and me.puts[1].text:find("Message 1795671000-abcd.1 to Reviewer may not have arrived", 1, true), me.puts[1] and me.puts[1].text)
+  S.timers = {}
+  start()
+  run_to(S.t + 30)
+  assert(#me.puts == 1, "the sender was told " .. #me.puts .. " times")
+  run_to(1795671121)
+  assert(#r.puts == 1 and r.puts[1].text:find("msg 1795671000-abcd.2,", 1, true), r.puts[1] and r.puts[1].text)
+end)
+trial("a paste slower than its alarm's interval doesn't loop: each pass sends the tick due then, in order", function()
+  local me = receiver("block:me")
+  alarm({ every = 10 })
+  local put = fake.put
+  fake.put = function(addr, text) S.t = S.t + 12 S.now = math.floor(S.t) return put(addr, text) end
+  start()
+  run_to(1795671000 + 100)
+  fake.put = put
+  local last = 0
+  for _, p in ipairs(me.delivered) do
+    local k = tonumber(p.text:match("abcd%.(%d+)%]"))
+    assert(k > last, "tick twice")
+    -- Each paste carries the last tick due when it began.
+    assert(math.floor((p.t - 12 - 1795671000) / 10) == k, "not the latest due tick: " .. k)
+    last = k
+  end
+  assert(last >= 7)
 end)
 trial("a one-shot claims a restart only when it starts at least 1s late", function()
   local me = receiver("block:me")
