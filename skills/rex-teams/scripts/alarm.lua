@@ -4,6 +4,7 @@
 --   rex do <skill>/scripts/alarm.lua every=SECONDS message='MESSAGE' [block=BLOCK]
 --   rex do <skill>/scripts/alarm.lua list=true
 --
+-- every= is at least 10 seconds; in= is any positive number.
 -- The target defaults to the calling agent. Alarms reach this host only, so
 -- host= is refused. An alarm is a queued message with a time; the postman
 -- delivers it as it does every message. A due tick
@@ -32,6 +33,8 @@ end
 local seconds = a["in"] or a.every
 need(seconds ~= nil and not (a["in"] and a.every), "use in=SECONDS or every=SECONDS")
 need(type(seconds) == "number" and seconds > 0, (a.every and "every" or "in") .. " must be a positive number of seconds")
+-- Timers round to whole seconds, so a shorter repeat could lose a tick.
+need(not a.every or a.every >= 10, "every must be at least 10 seconds")
 need(a.message ~= nil, "message is required")
 local _, me = lib.me()
 local id, name = mail.post({ to = a.block and tostring(a.block) or me, text = tostring(a.message),

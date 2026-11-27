@@ -71,7 +71,7 @@ notices, and messages you sent yourself, never cause notices
 
 **Alarm**
 ```
-alarm.lua ─► mail.post{at=…} or {every=…} ─► outbox     (in= and every= are any positive number)
+alarm.lua ─► mail.post{at=…} or {every=…} ─► outbox     (in= is any positive number; every= is at least 10)
 postman: timer to the due time ─► deliver as above
 recurring: tick k at start + k·every, never drifting
 a due tick goes out however late; ticks that pile up (a restart, a sleep, an unreachable pane) collapse into the latest one

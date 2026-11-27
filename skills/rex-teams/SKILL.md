@@ -117,7 +117,7 @@ Short IDs that look like numbers (e.g. `77e564`, `123456`) get mangled by `rex d
 rex do <skill>/scripts/alarm.lua in=1200 message="Check in on the Marketer agent"
 ```
 
-Use `in=SECONDS` once or `every=SECONDS` to repeat. The target defaults to you; pass `block=` to target another agent. Alarms work on this host only, so `host=` is refused. An alarm is a queued message, so it's typed in at its time like any other. `in=` and `every=` are positive numbers of seconds. A due tick goes out however late; ticks that pile up (Rex down, the machine asleep) collapse into the latest one. The schedule doesn't drift. Then **end your turn**.
+Use `in=SECONDS` once or `every=SECONDS` to repeat. The target defaults to you; pass `block=` to target another agent. Alarms work on this host only, so `host=` is refused. An alarm is a queued message, so it's typed in at its time like any other. `in=` is any positive number of seconds; `every=` is at least 10. A due tick goes out however late; ticks that pile up (Rex down, the machine asleep) collapse into the latest one. The schedule doesn't drift. Then **end your turn**.
 
 Keep the message to a short note to yourself, since you'll still have the conversation. Give a recurring alarm a stop condition, such as "check CI, and cancel this alarm once it's green".
 
