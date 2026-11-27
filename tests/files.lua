@@ -194,7 +194,7 @@ local function deliver()
     f = assert(io.open(root .. "/outbox/" .. file))
     local m = json.decode(f:read("*a"))
     f:close()
-    -- The message is kept, so the other file is the notice.
+    -- The other file is the notice.
     if file ~= name then p:close() return m.text end
   end
   p:close()

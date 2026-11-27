@@ -48,7 +48,7 @@ agent ◄─ "queued message <id> for <name>"
 ```
 postman ─ outbox check every 2 s
         ─ each receiver's due messages, in posted order (posted, then seq)
-        ─ pane.exists ─► gone            ─► one notice to the sender; the file is kept, marked dead
+        ─ pane.exists ─► gone            ─► one notice to the sender, with the message's text; the file is deleted
                       └► raises          ─► hold (Rex can't reach it): the rest of that receiver's queue waits, in order
                       └► there           ─► attach files (another host) ─► save d.pasted_at ─► pane.type
 pane.type went through ─► delete the file (a recurring alarm waits for its next tick)
@@ -64,7 +64,7 @@ An alarm waiting for its next tick, or a one-shot not yet due, doesn't hold up t
 
 **Notice**
 ```
-receiver gone, or files can't be copied ─► one notice, and the file is kept
+receiver gone, or files can't be copied ─► one notice with the message's text, and the file is deleted
 paste or Enter failed, or may not have finished ─► one notice, and the message (or a recurring alarm's tick) is dropped
 notices, and messages you sent yourself, never cause notices
 ```
@@ -93,7 +93,7 @@ postman here ─ rex.server("ws") ─► exists, type on ws; rex cp the files in
 
 | Path | What |
 |---|---|
-| `/tmp/rex-teams/outbox/<id>.json` | A queued message and its delivery state. Written whole (tmp + rename). The postman saves its delivery state in it before each copy or paste, and deletes it once delivered or dropped. Delete it to drop a message or cancel an alarm. A message whose receiver is gone, or whose files couldn't be copied, stays, marked `dead`. A file that isn't JSON stops delivery, and the postman says once, in its block, to delete it. |
+| `/tmp/rex-teams/outbox/<id>.json` | A queued message and its delivery state. Written whole (tmp + rename). The postman saves its delivery state in it before each copy or paste, and deletes it once delivered or dropped. Delete it to drop a message or cancel an alarm. A file that isn't JSON stops delivery, and the postman says once, in its block, to delete it. |
 | `/tmp/rex-teams/stage/<id>/` | Files on their way to another host, removed after the copy. |
 | `/tmp/rex-teams/inbox/<block>/<id>/` | Files that arrived from another host. The receiver removes them. |
 | `/tmp/rex-teams/tasks/<task>/` | A subagent's prompt, report and close command. |

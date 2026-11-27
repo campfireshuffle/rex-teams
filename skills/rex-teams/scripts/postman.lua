@@ -6,7 +6,7 @@
 -- start it again after a restart.
 --
 -- The save rule: save a message before its paste, and write the sender's
--- notice before removing the message or marking it dead. Whatever raises
+-- notice before removing the message. Whatever raises
 -- leaves the file as it was on disk.
 local dir = debug.getinfo(1, "S").source:gsub("^@", ""):match("^(.*[/\\])")
 local lib = dofile(dir .. "lib.lua")
@@ -56,11 +56,10 @@ local function tell(msg, what)
   mail.notice(msg.from, "Message " .. msg.d.tag .. " to " .. msg.to.name .. " " .. what)
 end
 
--- MSG can't go: its file is kept, marked dead, for its sender to read.
-local function give_up(msg, why, what)
-  tell(msg, what .. ". It's kept in " .. mail.file(msg.id) .. ".")
-  msg.dead = why
-  mail.write(msg, true)
+-- MSG can't go: its sender hears WHAT, with its text, and it's deleted.
+local function give_up(msg, what)
+  tell(msg, what .. ". It said: " .. msg.text)
+  mail.remove(msg.id)
 end
 
 -- MSG's paste is over, and is never tried again. ERR, if set, is why it
@@ -85,10 +84,10 @@ function M.deliver(msg, now)
 
   local reached, there = pcall(pane.exists, msg.to)
   if not reached then return true end -- held, never given up on
-  if not there then return give_up(msg, "gone", "can't be delivered: that pane is gone") end
+  if not there then return give_up(msg, "can't be delivered: that pane is gone") end
   if msg.files then
     local copied, err = pcall(pane.attach, msg.to, msg.files, msg.id)
-    if not copied then return give_up(msg, "files", "wasn't sent: " .. tostring(err)) end
+    if not copied then return give_up(msg, "wasn't sent: " .. tostring(err)) end
   end
 
   -- Saved first, so a postman that stops mid-paste never pastes it again,
@@ -218,7 +217,7 @@ function M.run()
       local held = {}
       for _, msg in ipairs(mail.list()) do
         local key = (msg.to.host or "") .. " " .. msg.to.block
-        if not held[key] and not msg.dead then
+        if not held[key] then
           local done, holds = pcall(M.deliver, msg, os.time())
           -- Its file is as it was, so the next pass tries it again, before
           -- the rest of its queue.

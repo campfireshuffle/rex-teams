@@ -23,7 +23,7 @@ if a.list then
   for _, msg in ipairs(mail.list()) do
     if (msg.at or msg.every) and msg.from.block == me then
       print(msg.id .. "  " .. (msg.every and ("every " .. msg.every .. "s") or ("at " .. os.date("%H:%M:%S", msg.at)))
-        .. "  to " .. msg.to.name .. ": " .. msg.text .. (msg.dead and "  (stopped: " .. msg.dead .. ")" or ""))
+        .. "  to " .. msg.to.name .. ": " .. msg.text)
       print("  cancel: rm " .. mail.file(msg.id))
     end
   end

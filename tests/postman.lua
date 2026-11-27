@@ -388,7 +388,7 @@ trial("a receiver Rex can't reach holds its queue, and nobody is told; when it's
   assert(texts(r.delivered):gsub("%[[^]]*%] ", "") == "first | second", texts(r.delivered))
   assert(#queued() == 0)
 end)
-trial("an alarm waiting for its next tick, a one-shot not yet due, or a dead message doesn't hold up later messages", function()
+trial("an alarm waiting for its next tick, a one-shot not yet due, or a message to a gone pane doesn't hold up later messages", function()
   local me = receiver("block:me")
   queue({ id = "1795671000-alrm", head = "[alarm you set", tail = "] ", to = "block:me", every = 60 })
   queue({ id = "1795671000-late", head = "[alarm you set", tail = "] ", to = "block:me", at = S.now + 300, seq = 1 })
@@ -397,7 +397,7 @@ trial("an alarm waiting for its next tick, a one-shot not yet due, or a dead mes
   assert(texts(me.puts) == "[alarm you set · msg 1795671000-alrm.1] hi", texts(me.puts))
   queue({ id = "1795671061-mine", posted = S.now, to = "block:me", text = "for me" })
   receiver("block:gone")
-  queue({ id = "1795671061-dead", posted = S.now, to = "block:gone" })
+  queue({ id = "1795671061-gone", posted = S.now, to = "block:gone" })
   S.receivers["block:gone"] = nil
   run_to(S.t + 3)
   queue({ id = "1795671064-next", posted = S.now, to = "block:gone", seq = 1, text = "next" })
@@ -464,7 +464,7 @@ trial("a failed paste or Enter is reported to its sender once, and never pasted 
     assert(#queued() == 0, fail .. ": still queued: " .. table.concat(queued(), " "))
   end
 end)
-trial("files for another host are copied once, and a failed copy is never pasted: its sender hears once, and the file is kept", function()
+trial("files for another host are copied once, and a failed copy is never pasted: its sender hears once, with its text, and the file is deleted", function()
   local r = receiver("block:to")
   queue({ host = "ws", files = { "/w/a.md" } })
   start()
@@ -478,8 +478,8 @@ trial("files for another host are copied once, and a failed copy is never pasted
   start()
   run_to(S.t + 30)
   assert(#r.puts == 0, "pasted after a failed copy")
-  assert(#me.puts == 1 and me.puts[1].text:find("Message 1795671000-abcd to Reviewer wasn't sent: rex cp failed. It's kept in " .. root .. "/outbox/1795671000-abcd.json.", 1, true), texts(me.puts))
-  assert(read_msg("1795671000-abcd").dead == "files")
+  assert(#me.puts == 1 and me.puts[1].text:find("Message 1795671000-abcd to Reviewer wasn't sent: rex cp failed. It said: hi", 1, true), texts(me.puts))
+  assert(#queued() == 0)
 end)
 trial("the receiver is checked once, before its files are copied: unreachable holds it with no copy", function()
   local r = receiver("block:to", { "down", "up" })
@@ -527,13 +527,13 @@ trial("deleting a message cancels it: held, while its receiver is checked, or wh
     assert(r.copies == 1, when .. ": " .. r.copies .. " copies")
   end
 end)
-trial("a receiver that's gone: one notice, and the file is kept", function()
+trial("a receiver that's gone: one notice with the text, and the file is deleted", function()
   local me = receiver("block:me")
   queue({ to = "block:gone" })
   start()
   run_to(S.t + 100)
-  assert(#me.puts == 1 and me.puts[1].text:find("Message 1795671000-abcd to Reviewer can't be delivered: that pane is gone. It's kept in " .. root .. "/outbox/1795671000-abcd.json.", 1, true), texts(me.puts))
-  assert(read_msg("1795671000-abcd").dead == "gone")
+  assert(#me.puts == 1 and me.puts[1].text:find("Message 1795671000-abcd to Reviewer can't be delivered: that pane is gone. It said: hi", 1, true), texts(me.puts))
+  assert(#queued() == 0)
 end)
 trial("nothing tells you about your own messages, and notices cause no notices", function()
   local me = receiver("block:me")
@@ -550,10 +550,7 @@ trial("nothing tells you about your own messages, and notices cause no notices",
   run_to(S.t + 10)
   fake.put = real_fake.put
   assert(#me.puts == 2 and not texts(me.puts):find("Message ", 1, true), texts(me.puts))
-  local ids = queued()
-  assert(#ids == 1, #ids .. " queued")
-  local m = read_msg(ids[1]:gsub("%.json$", ""))
-  assert(m.dead == "gone", "dead=" .. tostring(m.dead))
+  assert(#queued() == 0, #queued() .. " queued")
   for _, line in ipairs(S.printed) do assert(not line:find("%.lua:%d+:"), line) end
   -- The next message to that sender still goes out.
   queue({ id = "1795671010-next", posted = S.now, to = "block:me", from = { block = "block:other" } })
@@ -582,7 +579,7 @@ trial("a postman that stops while telling a sender still tells them", function()
     assert(#me.puts >= 1, case .. ": the sender wasn't told")
     assert(#r.puts <= 1, case .. ": pasted twice")
     local m = read_msg("1795671000-abcd")
-    if case == "paste" then assert(not m, "kept") else assert(m and m.dead == case, case .. ": not kept") end
+    assert(not m, case .. ": kept")
   end
 end)
 
@@ -829,7 +826,7 @@ trial("a Rex call or a write that raises once loses, doubles and misorders nothi
       local abcd = {}
       for i, p in ipairs(r.delivered) do if p.text:find("msg 1795671000%-abcd") then abcd[#abcd + 1] = i end end
       if case == "gone" then
-        assert(told and read_msg("1795671000-abcd").dead == "gone", where .. "not told, or not kept")
+        assert(told and not read_msg("1795671000-abcd"), where .. "not told, or kept")
       elseif case == "alarm" then
         assert(#abcd + (told and 1 or 0) >= 3, where .. #abcd .. " ticks delivered, told " .. tostring(told))
       else
