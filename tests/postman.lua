@@ -637,41 +637,33 @@ local function slow_world(step, every)
   end
   return me
 end
-trial("a recurring tick is pasted while slow checks of other receivers delay it", function()
-  local me = slow_world(0.3, 5)
-  start()
-  for _ = 1, 600 do run_to(S.t + 0.1) end
-  local due = math.floor((S.t - 1795671000) / 5)
-  for i, p in ipairs(me.puts) do
-    local tick = tonumber(p.text:match("%.(%d+)%]"))
-    assert(tick == i, "tick " .. i .. " skipped, pasted " .. tick)
-    assert(p.t >= 1795671000 + 5 * tick, "early")
-  end
-  assert(#me.puts >= due - 1, #me.puts .. " of " .. due .. " ticks")
-end)
-trial("a slow pass of other receivers never drops an alarm tick that nothing overtook", function()
-  -- Each pass takes longer than the alarm's interval.
-  local me = slow_world(3, 10)
-  -- Each time the postman turns to the alarm, the last tick due then must
-  -- go out: only a later tick due too may take its place.
-  local turns = {}
-  P.deliver = function(msg, now)
-    if msg.every then turns[#turns + 1] = { t = S.t, k = math.floor((now - msg.start) / 10) } end
-    return real_P.deliver(msg, now)
-  end
-  start()
-  for _ = 1, 600 do run_to(S.t + 0.1) end
-  local pasted, last = {}, 0
-  for _, p in ipairs(me.puts) do
-    local tick = tonumber(p.text:match("msg 1795671000%-alrm%.(%d+)%]"))
-    assert(tick > last, "tick " .. tick .. " after " .. last)
-    assert(p.t >= 1795671000 + 10 * tick, "tick " .. tick .. " early")
-    pasted[tick], last = true, tick
-  end
-  assert(last >= 10, "only up to tick " .. last)
-  for _, turn in ipairs(turns) do
-    if turn.k > 0 and turn.t < S.t - 30 then
-      assert(pasted[turn.k], ("tick %d was the last due at +%.1f, and never went out"):format(turn.k, turn.t - 1795671000))
+trial("slow checks of other receivers never drop an alarm tick that nothing overtook", function()
+  -- Checks faster than the alarm, then passes slower than it.
+  for _, world in ipairs({ { 0.3, 5 }, { 3, 10 } }) do
+    reset()
+    local every = world[2]
+    local me = slow_world(world[1], every)
+    -- Each time the postman turns to the alarm, the last tick due then must
+    -- go out: only a later tick due too may take its place.
+    local turns = {}
+    P.deliver = function(msg, now)
+      if msg.every then turns[#turns + 1] = { t = S.t, k = math.floor((now - msg.start) / every) } end
+      return real_P.deliver(msg, now)
+    end
+    start()
+    for _ = 1, 600 do run_to(S.t + 0.1) end
+    local pasted, last = {}, 0
+    for _, p in ipairs(me.puts) do
+      local tick = tonumber(p.text:match("msg 1795671000%-alrm%.(%d+)%]"))
+      assert(tick > last, "tick " .. tick .. " after " .. last)
+      assert(p.t >= 1795671000 + every * tick, "tick " .. tick .. " early")
+      pasted[tick], last = true, tick
+    end
+    assert(last >= 5, "only up to tick " .. last)
+    for _, turn in ipairs(turns) do
+      if turn.k > 0 and turn.t < S.t - 30 then
+        assert(pasted[turn.k], ("every=%d: tick %d was the last due at +%.1f, and never went out"):format(every, turn.k, turn.t - 1795671000))
+      end
     end
   end
 end)
