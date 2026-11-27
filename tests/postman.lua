@@ -43,11 +43,30 @@ os.time = function(t) if t then return real_time(t) end return S.now end
 os.getenv = function(k) if S.env[k] ~= nil then return S.env[k] or nil end return real_getenv(k) end
 io.stdout = { write = function(self, ...) for _, s in ipairs({ ... }) do S.out[#S.out + 1] = s end return self end, flush = function() end }
 
+-- Listing a folder takes a fork, and the passes list the outbox thousands
+-- of times. Every file in the scratch folder is written by this process,
+-- so remember every path written, and list the ones that exist now.
+local real_open, real_rename = io.open, os.rename
+local written = {}
+io.open = function(path, mode)
+  if mode and mode:find("^w") then written[path] = true end
+  return real_open(path, mode)
+end
+os.rename = function(from, to)
+  written[to] = true
+  return real_rename(from, to)
+end
 local function ls(dir)
-  local p = io.popen("ls " .. quote(dir) .. " 2>/dev/null")
   local out = {}
-  for name in p:lines() do out[#out + 1] = name end
-  p:close()
+  for path in pairs(written) do
+    local name = path:sub(#dir + 2)
+    local f = path:sub(1, #dir + 1) == dir .. "/" and not name:find("/") and real_open(path)
+    if f then
+      f:close()
+      out[#out + 1] = name
+    end
+  end
+  table.sort(out)
   return out
 end
 
@@ -903,6 +922,6 @@ trial("README quotes the trust rule that lets Rex resume the postman's command",
 end)
 
 os.execute("rm -rf " .. quote(tmp))
-dofile, os.time, os.getenv = real_dofile, real_time, real_getenv
+dofile, os.time, os.getenv, io.open, os.rename = real_dofile, real_time, real_getenv, real_open, real_rename
 if failed > 0 then print(failed .. " of " .. n .. " postman trials failed.") os.exit(1) end
 print("Passed " .. n .. " postman trials.")
