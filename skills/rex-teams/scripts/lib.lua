@@ -165,9 +165,9 @@ function lib.send_command(block, message, host, script)
 end
 
 -- The header of message ID, for another host when CROSS is true. It names
--- the message, so the receiver and the postman can tell messages apart. The
--- sender can't know send.lua's path or its own label on the receiver's
--- host, so the receiver fills them in.
+-- the message, so the receiver can tell messages apart. The sender can't
+-- know send.lua's path or its own label on the receiver's host, so the
+-- receiver fills them in.
 function lib.header(from_session, from_block, cross, id)
   local from = lib.name(from_session, from_block)
   if not cross then
