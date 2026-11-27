@@ -546,24 +546,6 @@ trial("a one-shot fires once at its absolute time, not a fresh countdown, and is
   assert(#me.puts == 1 and me.puts[1].t == 1795671120 and me.puts[1].text == "[alarm you set · msg 1795671000-abcd] hi", texts(me.puts))
   assert(#queued() == 0)
 end)
-trial("a one-shot that starts at least 1s late fires at once with a note; on time, without", function()
-  local me = receiver("block:me")
-  alarm({ at = S.now + 20 })
-  run_to(S.t + 39)
-  start()
-  assert(texts(me.puts) == "[alarm you set · msg 1795671000-abcd] hi [late by 19s, Rex restarted]", texts(me.puts))
-  for _, at in ipairs({ { 20, 20 }, { 0.5, 1.05 } }) do
-    reset()
-    me = receiver("block:me")
-    S.t, S.now = 1795671000.95, 1795671000
-    alarm({ at = 1795671000 + at[1] })
-    S.t = 1795671000 + at[2]
-    S.now = math.floor(S.t)
-    start()
-    run_to(S.t + 0.1)
-    assert(texts(me.puts) == "[alarm you set · msg 1795671000-abcd] hi", "on time is not late: " .. texts(me.puts))
-  end
-end)
 trial("a one-shot never fires before its time", function()
   for _, wait in ipairs({ 5, 1.5, 0.5 }) do
     reset()

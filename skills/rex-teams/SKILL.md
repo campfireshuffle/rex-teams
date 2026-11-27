@@ -123,7 +123,7 @@ Keep the message to a short note to yourself, since you'll still have the conver
 
 `alarm.lua` prints the alarm's id and the `rm` command that cancels it. List your alarms with `rex do <skill>/scripts/alarm.lua list=true`.
 
-The trust rule that brings the postman back after a Rex restart is in the README at https://github.com/campfireshuffle/rex-teams. Don't edit the user's Rex config. A one-shot due while the postman was down arrives marked `[late by Ns, Rex restarted]`. If a script prints that the postman didn't start, nothing was queued; tell the user what it says, and send again once it's fixed.
+The trust rule that brings the postman back after a Rex restart is in the README at https://github.com/campfireshuffle/rex-teams. Don't edit the user's Rex config. If a script prints that the postman didn't start, nothing was queued; tell the user what it says, and send again once it's fixed.
 
 ## Rules
 

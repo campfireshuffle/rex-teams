@@ -41,7 +41,6 @@ local function due(msg, now)
     local at = msg.at or msg.posted
     if now < at then return at end
     msg.d = { tag = msg.id }
-    if msg.late then msg.d.note = " [late by " .. msg.late .. "s, Rex restarted]" end
     return nil
   end
   -- A tick that's been pasted is finished as it is, never retagged.
@@ -125,7 +124,7 @@ function M.deliver(msg, now)
   -- Saved first, so a postman that stops mid-paste never pastes it again.
   d.pasted_at = now
   if not mail.write(msg, true) then return nil end
-  local text = msg.head .. " · msg " .. d.tag .. msg.tail .. msg.text .. (d.note or "")
+  local text = msg.head .. " · msg " .. d.tag .. msg.tail .. msg.text
   local ok, err = pcall(pane.put, msg.to, text)
   if ok then ok, err = pcall(pane.enter, msg.to) end
   if not ok then return finish(msg, tostring(err)) end
@@ -267,7 +266,6 @@ function M.run()
     rex.stop(0)
     return
   end
-  local started = os.time()
   print("postman: delivering " .. mail.dir())
 
   local said -- the error the last pass stopped on
@@ -284,9 +282,6 @@ function M.run()
       for _, queue in pairs(queues) do
         for _, msg in ipairs(queue) do
           if not msg.dead then
-            -- A one-shot already due when this postman started was due
-            -- while Rex, or the postman, was down.
-            if msg.at and not msg.d and msg.at <= started - 1 then msg.late = started - msg.at end
             local delivered, at = pcall(M.deliver, msg, os.time())
             if not delivered then
               -- Its file is as it was, so the next pass tries it again,
