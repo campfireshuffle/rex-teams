@@ -77,10 +77,7 @@ end
 -- moves to another session, so look its session up instead of trusting an
 -- environment variable.
 function lib.me()
-  local block = lib.need(os.getenv("REX_BLOCK"), "run this inside a Rex terminal")
-  local found = lib.call("target.resolve", { queries = { block }, kinds = { "block" } }).results[1]
-  lib.need(found.status == "resolved", "Rex can't find your pane " .. block .. " (" .. found.status .. ")")
-  return found.target.session_id, found.target.block_id
+  return lib.target(nil, lib.need(os.getenv("REX_BLOCK"), "run this inside a Rex terminal"))
 end
 
 -- A script must attach to a session before it can act on it.
@@ -88,7 +85,9 @@ function lib.attach(session, host)
   lib.call("session.attach", { session_id = session }, host)
 end
 
--- Every block in a session, with its tab and pane labels.
+-- Every block in a session, with its name. An agent goes by its pane's
+-- label in a split tab, and by its tab's label otherwise. Rex labels an
+-- unnamed pane "shell".
 function lib.blocks(session, host)
   lib.attach(session, host)
   local out = {}
@@ -98,17 +97,19 @@ function lib.blocks(session, host)
       for _, block in ipairs(layer.blocks) do blocks[#blocks + 1] = block end
     end
     for _, block in ipairs(blocks) do
-      out[#out + 1] = { id = block.block_id, tab = window.label or "", pane = block.label or "", split = #blocks > 1 }
+      local pane = #blocks > 1 and block.label ~= "shell" and block.label
+      out[#out + 1] = { id = block.block_id, name = pane or window.label or "" }
     end
   end
   return out
 end
 
--- An agent goes by its pane's label in a split tab, and by its tab's label
--- otherwise. Rex labels an unnamed pane "shell".
-function lib.name(block)
-  if block.split and block.pane ~= "shell" then return block.pane end
-  return block.tab
+-- The name of BLOCK in SESSION on HOST, or its ID if it isn't there.
+function lib.name(session, block, host)
+  for _, b in ipairs(lib.blocks(session, host)) do
+    if b.id == block then return b.name end
+  end
+  return block
 end
 
 -- The absolute paths of PATHS, read the way a program in BLOCK's terminal
@@ -217,10 +218,7 @@ end
 -- the postman can tell messages apart. The sender can't know send.lua's path
 -- or its own label on the receiver's host, so the receiver fills them in.
 function lib.header(from_session, from_block, cross)
-  local from
-  for _, block in ipairs(lib.blocks(from_session)) do
-    if block.id == from_block then from = lib.name(block) end
-  end
+  local from = lib.name(from_session, from_block)
   if not cross then
     return "[from " .. from, ", who can't see this screen."
       .. " Reply by running: " .. lib.send_command(from_block, "<reply>") .. "] "

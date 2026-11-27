@@ -76,7 +76,7 @@ check("agents can fill in a placeholder by editing the command text", function()
   end
 end)
 check("the reply command in a message header runs as written", function()
-  lib.blocks = function() return { { id = "block:b1", tab = "it's `me` $HOME", pane = "", split = false } } end
+  lib.blocks = function() return { { id = "block:b1", name = "it's `me` $HOME" } } end
   local head, tail = lib.header("session:test", "block:b1")
   local header = head .. " · msg 1-abcd" .. tail
   local reply = assert(header:match("Reply by running: (.*)%] $"))

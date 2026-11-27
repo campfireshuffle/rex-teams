@@ -135,10 +135,7 @@ function mail.post(o)
   lib.attach(from_session)
   local paths = lib.locate(from_session, from_block, files)
   local id = lib.id()
-  local name = block
-  for _, b in ipairs(lib.blocks(session, host)) do
-    if b.id == block then name = lib.name(b) end
-  end
+  local name = lib.name(session, block, host)
 
   if #paths > 0 and host then
     need(not lib.windows, "file= to another host doesn't work from Windows yet")
