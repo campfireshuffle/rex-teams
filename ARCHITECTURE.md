@@ -94,13 +94,11 @@ postman here ─ rex.server("ws") ─► exists, type on ws; rex cp the files in
 | Path | What |
 |---|---|
 | `/tmp/rex-teams/outbox/<id>.json` | A queued message and its delivery state. Written whole (tmp + rename). The postman saves its delivery state in it before each copy or paste, and deletes it once delivered or dropped. Delete it to drop a message or cancel an alarm. A message whose receiver is gone, or whose files couldn't be copied, stays, marked `dead`. A file that isn't JSON stops delivery, and the postman says once, in its block, to delete it. |
-| `/tmp/rex-teams/postman.json` | The running postman: its block and pid. |
-| `/tmp/rex-teams/postman.lock` | A `mkdir` lock while a postman claims `postman.json`. |
 | `/tmp/rex-teams/stage/<id>/` | Files on their way to another host, removed after the copy. |
 | `/tmp/rex-teams/inbox/<block>/<id>/` | Files that arrived from another host. The receiver removes them. |
 | `/tmp/rex-teams/tasks/<task>/` | A subagent's prompt, report and close command. |
 | `/tmp/rex-teams/depth/<block>` | How many levels of subagents a subagent may start. |
-| The `rex-teams` session | Holds the postman's detached block, labelled `rex-teams postman`. |
+| The `rex-teams` session | Holds the postman's detached block, labelled `rex-teams postman`. Rex is the record of who the postman is: the oldest live block with that label (one running `rex`) in any session labelled `rex-teams`. `ensure` starts one if there's none, and a newer one quits at start. Right after a Rex restart, two can rarely overlap. |
 
 On Windows the root is `%TEMP%\rex-teams`.
 
@@ -115,7 +113,7 @@ If Rex grows a better API, this table says what to swap.
 | `pane.attach` | `rex cp` | the same |
 | postman timers | `rex.after` | the same |
 | postman restart | OSC 7577 report, and the trust rule over the scripts folder that README.md quotes | the same |
-| postman singleton | `postman.json`, `mkdir` lock, `block.method process` for liveness | a Rex singleton or named service |
+| postman singleton | `session.list`, `session.list_blocks`, `block.method process` for liveness | a Rex singleton or named service |
 | postman home | `session.list`, `session.create`, `session.new_block` (detached) | a Rex background service |
 | cross-host | `rex.server(label)` | the same |
 | listing the outbox | `block.method list_dir` | the same |

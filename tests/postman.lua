@@ -34,6 +34,7 @@ local function reset()
   os.execute("mkdir -p " .. quote(root))
   S = {
     now = 1795671000, t = 1795671000, env = { REX_BLOCK = "block:pm", OSC7577_TOKEN = TOKEN },
+    sessions = {},
     blocks = { ["block:pm"] = { session = "s:home", pid = 4242 }, ["block:me"] = { session = "s:1" }, ["block:to"] = { session = "s:1" } },
     timers = {}, out = {}, printed = {}, stopped = nil, closed = {}, receivers = {}, sleeps = 0, slept = 0, attached = {},
   }
@@ -84,17 +85,32 @@ rex = {
       return { results = { { status = "resolved", target = { session_id = b.session, block_id = args.queries[1] } } } }
     end
     if method == "block.close" then S.closed[#S.closed + 1] = args.block_id S.blocks[args.block_id] = nil return {} end
-    if method == "session.list" then return { sessions = S.sessions or {} } end
-    if method == "session.create" then S.created = args.label return { session_id = "s:home" } end
+    if method == "session.list" then
+      if S.list_fails then error("rex: session.list timed out", 0) end
+      return { sessions = S.sessions }
+    end
+    if method == "session.create" then
+      S.created = args.label
+      table.insert(S.sessions, { session_id = "s:home", label = args.label })
+      return { session_id = "s:home" }
+    end
+    if method == "session.list_blocks" then
+      local blocks = {}
+      for id, b in pairs(S.blocks) do
+        if b.session == args.session_id then blocks[#blocks + 1] = { block_id = id, label = b.label } end
+      end
+      return { blocks = blocks }
+    end
     if method == "session.new_block" then
       S.new_block = args
-      S.blocks["block:new"] = { session = "s:home", pid = 7 }
+      -- Its process takes a moment to start.
+      S.blocks["block:new"] = { session = args.session_id, label = args.label }
       return { block_id = "block:new" }
     end
     if method == "block.method" and args.method == "process" then
       local b = S.blocks[args.block_id]
       if not b then error("block not found (status=404 code=not_found)", 0) end
-      return { foreground = b.pid and { pid = b.pid, name = "rex" }, last_exit = b.last_exit }
+      return { foreground = b.pid and { pid = b.pid, name = b.fg or "rex" }, last_exit = b.last_exit }
     end
     if method == "block.method" and args.method == "list_dir" then
       local entries = {}
@@ -279,82 +295,65 @@ end)
 
 -- Singleton -------------------------------------------------------------------
 
-trial("the postman claims postman.json with its block and pid", function()
-  start()
-  local f = assert(io.open(root .. "/postman.json"))
-  local s = json.decode(f:read("*a"))
-  f:close()
-  assert(s.block == "block:pm" and s.pid == 4242 and s.session == nil)
-  assert(not io.open(root .. "/postman.lock"), "the lock was left")
-end)
-trial("with no rex-teams folder yet, the first postman claims and delivers", function()
+-- A postman block in the rex-teams session, s:home.
+local function postman(block, o)
+  S.sessions = { { session_id = "s:home", label = "rex-teams" } }
+  S.blocks[block] = { session = "s:home", label = "rex-teams postman", pid = 99, fg = o and o.fg, last_exit = o and o.last_exit }
+end
+local function delivering()
+  local n = 0
+  for _, line in ipairs(S.printed) do
+    if line:find("^postman: delivering") then n = n + 1 end
+  end
+  return n
+end
+
+trial("with no rex-teams folder yet, the first postman delivers", function()
   os.execute("rm -rf " .. quote(root))
+  postman("block:pm")
   start()
-  local f = assert(io.open(root .. "/postman.json"), "not claimed")
-  f:close()
   local r = receiver("block:to")
   queue({})
   run_to(S.t + 3)
-  assert(#r.delivered == 1 and #queued() == 0)
+  assert(delivering() == 1 and #r.delivered == 1 and #queued() == 0)
+  assert(not io.open(root .. "/postman.json"), "postman.json is back")
 end)
-trial("two postmen starting at once: only one claims", function()
-  S.blocks["block:pm2"] = { session = "s:home", pid = 4343 }
-  local rename, second = os.rename, nil
-  -- The second starts while the first is claiming.
-  os.rename = function(a, b)
-    if not second then
-      second = true
-      S.env.REX_BLOCK = "block:pm2"
-      pcall(P.run)
-      S.env.REX_BLOCK = "block:pm"
-    end
-    return rename(a, b)
-  end
-  local ok, err = pcall(P.run)
-  os.rename = rename
-  assert(ok, err)
-  local delivering = 0
-  for _, line in ipairs(S.printed) do
-    if line:find("^postman: delivering") then delivering = delivering + 1 end
-  end
-  assert(second and delivering == 1, delivering .. " postmen claimed")
-end)
-trial("a second postman sees the first, closes its own block and stops", function()
-  S.blocks["block:first"] = { session = "s:home", pid = 99 }
-  lib.write(root .. "/postman.json", json.encode({ block = "block:first", pid = 99 }))
+trial("two postmen starting at once: the older delivers, the newer closes its block", function()
+  postman("block:pm")
+  postman("block:pm2")
+  S.blocks["block:pm"].pid = 4242
+  S.env.REX_BLOCK = "block:pm2"
   start()
-  assert(S.stopped == 0 and S.closed[1] == "block:pm" and #S.out == 0 and #S.timers == 0)
+  assert(S.stopped == 0 and S.closed[1] == "block:pm2" and #S.out == 0 and #S.timers == 0, "the newer one stayed")
+  S.stopped, S.env.REX_BLOCK = nil, "block:pm"
+  start()
+  assert(not S.stopped and delivering() == 1)
 end)
-trial("a postman stops before its next delivery once postman.json is gone or names another postman", function()
-  -- With nothing queued, it stops too, rather than idle on as a second postman.
-  for _, case in ipairs({ "removed", "removed, idle", "rewritten", "rewritten mid-pass" }) do
+trial("an older postman block that isn't live doesn't count", function()
+  -- Stopped, a shell after a Rex restart, or labelled, or kept, elsewhere.
+  for _, case in ipairs({ "exited", "shell", "label", "session" }) do
     reset()
-    local r = receiver("block:to")
+    postman("block:a-old", { last_exit = case == "exited" and { exit_code = 1 } or nil, fg = case == "shell" and "fish" or nil })
+    if case == "label" then S.blocks["block:a-old"].label = "notes" end
+    if case == "session" then S.sessions[1].label = "work" end
     start()
-    if case ~= "removed, idle" then
-      queue({ id = "1795671000-aaaa", text = "first" })
-      queue({ id = "1795671000-bbbb", text = "second", seq = 1 })
-    end
-    local claim = json.encode({ block = "block:other", pid = 8 })
-    if case:find("^removed") then os.remove(root .. "/postman.json") end
-    if case == "rewritten" then lib.write(root .. "/postman.json", claim) end
-    if case == "rewritten mid-pass" then
-      fake.put = function(addr, text)
-        lib.write(root .. "/postman.json", claim)
-        return real_fake.put(addr, text)
-      end
-    end
-    run_to(S.t + 10)
-    local want = case == "rewritten mid-pass" and "first" or ""
-    assert(texts(r.delivered):gsub("%[[^]]*%] ", "") == want, case .. ": delivered " .. texts(r.delivered))
-    assert(S.stopped == 0 and S.closed[1] == "block:pm" and #S.timers == 0, case .. ": didn't stop")
+    assert(not S.stopped and delivering() == 1, case .. ": quit")
   end
 end)
-trial("a postman.json whose process is gone is taken over", function()
-  S.blocks["block:first"] = { session = "s:home", pid = 100 }
-  lib.write(root .. "/postman.json", json.encode({ block = "block:first", pid = 99 }))
+trial("every rex-teams session counts, since labels can repeat", function()
+  postman("block:pm")
+  table.insert(S.sessions, { session_id = "s:dup", label = "rex-teams" })
+  S.blocks["block:a-old"] = { session = "s:dup", label = "rex-teams postman", pid = 5 }
   start()
-  assert(not S.stopped and table.concat(S.out):find("^\27%]7577;"))
+  assert(S.stopped == 0 and S.closed[1] == "block:pm")
+end)
+trial("a lookup that raises doesn't stop the postman, which may be the only one", function()
+  postman("block:a-old")
+  S.list_fails = true
+  local r = receiver("block:to")
+  queue({})
+  start()
+  assert(not S.stopped and #r.delivered == 1)
 end)
 
 -- Delivery --------------------------------------------------------------------
@@ -850,25 +849,24 @@ end)
 -- ensure ------------------------------------------------------------------------
 
 -- P.ensure while the postman it starts, block:new, does WHAT as it waits:
--- "claims", "fails" (exits), "hangs", or "loses" to another postman and
+-- "starts", "fails" (exits), "hangs", or "loses" to an older postman and
 -- closes its own block.
 local function ensure(what)
   S.on_sleep = function(i)
-    if what == "claims" and i == 1 then lib.write(root .. "/postman.json", json.encode({ block = "block:new", pid = 7 })) end
+    if what == "starts" and i == 1 then S.blocks["block:new"].pid = 7 end
     if what == "fails" and i == 1 then S.blocks["block:new"].last_exit = { exit_code = 1 } end
     if what == "loses" and i == 1 then
-      -- The winner has claimed, but Rex doesn't show its process yet.
-      S.blocks["block:other"] = { session = "s:home" }
-      lib.write(root .. "/postman.json", json.encode({ block = "block:other", pid = 8 }))
+      -- The older one runs, but Rex doesn't show its process yet.
+      S.blocks["block:a-old"] = { session = "s:home", label = "rex-teams postman" }
       S.blocks["block:new"] = nil
     end
-    if what == "loses" and i == 2 then S.blocks["block:other"].pid = 8 end
+    if what == "loses" and i == 2 then S.blocks["block:a-old"].pid = 8 end
   end
   return P.ensure()
 end
 
-trial("ensure starts the postman in a rex-teams session, and returns once it claims", function()
-  assert(ensure("claims") == nil)
+trial("ensure starts the postman in a rex-teams session, and returns once it runs", function()
+  assert(ensure("starts") == nil)
   local nb = assert(S.new_block, "no block started")
   local c = nb.options.command
   assert(S.created == "rex-teams" and nb.session_id == "s:home" and nb.label == "rex-teams postman")
@@ -878,15 +876,18 @@ trial("ensure starts the postman in a rex-teams session, and returns once it cla
 end)
 trial("ensure reuses the session labelled rex-teams", function()
   S.sessions = { { session_id = "s:theirs", label = "work" }, { session_id = "s:rt", label = "rex-teams" } }
-  ensure("claims")
+  ensure("starts")
   assert(S.new_block.session_id == "s:rt" and not S.created)
 end)
 trial("ensure leaves a running postman alone", function()
-  S.blocks["block:first"] = { session = "s:home", pid = 99 }
-  lib.write(root .. "/postman.json", json.encode({ block = "block:first", pid = 99 }))
+  postman("block:first")
   assert(ensure("hangs") == nil and not S.new_block)
 end)
-trial("ensure returns when another postman wins the claim", function()
+trial("ensure starts a postman when the only postman block isn't live", function()
+  postman("block:first", { fg = "fish" })
+  assert(ensure("starts") == nil and S.new_block)
+end)
+trial("ensure returns when an older postman wins", function()
   assert(ensure("loses") == nil)
   assert(S.sleeps == 2, S.sleeps .. " sleeps")
 end)
@@ -894,24 +895,10 @@ trial("a postman that fails to start is an error naming its block, which stays o
   fails("the postman didn't start. See why with: rex capture -s s:home -b block:new", function() ensure("fails") end)
   assert(#S.closed == 0, "the failed postman's block was closed")
 end)
-trial("a postman that doesn't claim within 5s is an error naming its block", function()
+trial("a postman that doesn't run within 5s is an error naming its block", function()
   fails("the postman didn't start within 5s. See why with: rex capture -s s:home -b block:new", function() ensure("hangs") end)
   -- The limit is the time waited, not the number of checks.
   assert(math.abs(S.slept - 5) < 1e-6, "waited " .. S.slept .. " seconds")
-end)
-trial("a postman that can't report never claims, so ensure raises", function()
-  S.env.OSC7577_TOKEN = false
-  local ran
-  S.on_sleep = function(i)
-    if i ~= 1 then return end
-    S.env.REX_BLOCK = "block:new"
-    ran = { pcall(P.run) }
-    S.env.REX_BLOCK = "block:pm"
-    S.blocks["block:new"].last_exit = { exit_code = 1 }
-  end
-  fails("the postman didn't start.", P.ensure)
-  assert(ran[1] == false and tostring(ran[2]):find("OSC7577_TOKEN", 1, true), tostring(ran[2]))
-  assert(not io.open(root .. "/postman.json"), "claimed without reporting")
 end)
 
 -- The trust rule ----------------------------------------------------------------

@@ -1,8 +1,9 @@
 -- One postman per Rex host delivers the queued messages in
 -- /tmp/rex-teams/outbox/<id>.json, each of which also holds its delivery
 -- state (msg.d). Every 2 s it reads the outbox and delivers what's due,
--- oldest first per receiver; deleting a file cancels it. postman.json names
--- the running postman, and OSC 7577 lets Rex start it again after a restart.
+-- oldest first per receiver; deleting a file cancels it. The oldest live
+-- block labelled "rex-teams postman" is the postman, and OSC 7577 lets Rex
+-- start it again after a restart.
 --
 -- The save rule: save a message before its paste, and write the sender's
 -- notice before removing the message or marking it dead. Whatever raises
@@ -122,41 +123,28 @@ end
 
 -- Singleton ------------------------------------------------------------
 
-local state_file = lib.path("postman.json")
-local lock = lib.path("postman.lock")
-
-local function read_state()
-  local f = io.open(state_file)
-  if not f then return nil end
-  local text = f:read("*a")
-  f:close()
-  return rex.json.decode(text)
-end
-
--- Whether STATE names a postman that is running: its block exists and its
--- foreground process is the one that claimed it.
-function M.alive(state)
-  if not state then return false end
-  local found = lib.call("target.resolve", { queries = { state.block }, kinds = { "block" } }).results[1]
-  if found.status ~= "resolved" then return false end
-  lib.attach(found.target.session_id)
-  local p = lib.call("block.method", { session_id = found.target.session_id, block_id = state.block, method = "process", args = {} })
-  return p.foreground ~= nil and p.foreground.pid == state.pid
-end
-
--- Run F holding the lock, an atomic mkdir.
-local function locked(f)
-  for _ = 1, 50 do
-    local r = rex.exec(lib.windows and { "cmd", "/c", "mkdir", lock } or { "mkdir", lock })
-    if r and r.ok then
-      local ok, err = pcall(f)
-      rex.exec(lib.windows and { "cmd", "/c", "rmdir", lock } or { "rmdir", lock })
-      if not ok then error(err, 0) end
-      return err
+-- The live postmen's block IDs, oldest first. Rex is the record: a postman
+-- is a block labelled "rex-teams postman" in a session labelled
+-- "rex-teams", and it's live while it runs `rex`. After a Rex restart, a
+-- postman that had stopped comes back as a live shell. Labels can repeat,
+-- so every rex-teams session counts.
+function M.live()
+  local out = {}
+  for _, s in ipairs(lib.call("session.list", {}).sessions) do
+    if s.label == "rex-teams" then
+      lib.attach(s.session_id)
+      for _, b in ipairs(lib.call("session.list_blocks", { session_id = s.session_id }).blocks) do
+        if b.label == "rex-teams postman" then
+          -- A block can close while it's listed.
+          local ok, p = pcall(lib.call, "block.method", { session_id = s.session_id, block_id = b.block_id, method = "process", args = {} })
+          if ok and not p.last_exit and p.foreground and p.foreground.name == "rex" then out[#out + 1] = b.block_id end
+        end
+      end
     end
-    rex.sleep(0.1)
   end
-  error("another postman has held " .. lock .. " for 5s; if no postman is starting, remove it", 0)
+  -- Block IDs are time-ordered.
+  table.sort(out)
+  return out
 end
 
 -- The session that holds the postman's block, made if it's missing.
@@ -168,11 +156,9 @@ local function home()
 end
 
 -- Make sure this host's postman is running, starting it if not. Raises if
--- it doesn't start. A postman claims postman.json only once it has
--- reported itself to Rex, so a live claim means a postman runs: this one,
--- or another that won the claim.
+-- it doesn't start.
 function M.ensure()
-  if M.alive(read_state()) then return end
+  if M.live()[1] then return end
   local session = home()
   lib.attach(session)
   local block = lib.call("session.new_block", {
@@ -184,9 +170,9 @@ function M.ensure()
   }).block_id
   local hint = " See why with: rex capture -s " .. session .. " -b " .. block
   for _ = 1, 100 do
-    if M.alive(read_state()) then return end
-    -- A postman that lost the claim closes its own block, so this call can
-    -- fail; the next check then finds the winner.
+    if M.live()[1] then return end
+    -- A postman that finds an older one closes its own block, so this call
+    -- can fail; the next check then finds the older one.
     local asked, p = pcall(lib.call, "block.method", { session_id = session, block_id = block, method = "process", args = {} })
     if asked and p.last_exit then error("the postman didn't start." .. hint, 0) end
     rex.sleep(0.05)
@@ -231,39 +217,23 @@ end
 function M.run()
   local me_session, me = lib.me()
   lib.attach(me_session)
-  local pid = lib.call("block.method", { session_id = me_session, block_id = me, method = "process", args = {} }).foreground.pid
-  -- Also makes the root folder, which holds the lock.
-  lib.mkdir(lib.path("outbox"))
-  local claimed = locked(function()
-    local s = read_state()
-    if s and s.block ~= me and M.alive(s) then return false end
-    M.report()
-    lib.write(state_file .. ".tmp", rex.json.encode({ block = me, pid = pid }))
-    assert(os.rename(state_file .. ".tmp", state_file))
-    return true
-  end)
   local function quit(why)
     print("postman: " .. why)
     lib.call("block.close", { session_id = me_session, block_id = me })
     rex.stop(0)
   end
-  if not claimed then return quit("another postman is running") end
+  -- The oldest live postman delivers; a newer one quits before it reports.
+  -- A lookup that raises doesn't stop this one, which may be the only one.
+  local looked, live = pcall(M.live)
+  if looked and live[1] and live[1] < me then return quit("an older postman is running") end
+  M.report()
+  lib.mkdir(lib.path("outbox"))
   print("postman: delivering " .. mail.dir())
-
-  -- Once postman.json is gone, the next message's ensure starts another
-  -- postman, which claims it. Only the postman it names may deliver, or
-  -- both would paste the same message.
-  local function deposed()
-    local s = read_state()
-    return not (s and s.block == me)
-  end
 
   local said -- the error the last pass stopped on
   local function pass()
-    if deposed() then return quit("postman.json no longer names this postman") end
     -- The next pass comes when something is due, and at most M.poll from now.
     local next_at = os.time() + M.poll
-    local stop = false
     local ok, err = pcall(function()
       local queues = {}
       for _, msg in ipairs(mail.list()) do
@@ -274,8 +244,6 @@ function M.run()
       for _, queue in pairs(queues) do
         for _, msg in ipairs(queue) do
           if not msg.dead then
-            -- Another postman may have claimed during this pass.
-            if deposed() then stop = true return end
             local delivered, at = pcall(M.deliver, msg, os.time())
             if not delivered then
               -- Its file is as it was, so the next pass tries it again,
@@ -291,7 +259,6 @@ function M.run()
         end
       end
     end)
-    if stop then return quit("postman.json no longer names this postman") end
     -- A file someone broke stops every pass until it's deleted: say so once.
     if ok then
       said = nil

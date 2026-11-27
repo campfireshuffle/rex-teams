@@ -12,7 +12,7 @@
 -- or it can't close the postman it started.
 --
 -- It uses the postman in this checkout, so stop any other postman first
--- (see /tmp/rex-teams/postman.json).
+-- (a live block labelled "rex-teams postman" in the rex-teams session).
 local repo = debug.getinfo(1, "S").source:gsub("^@", ""):match("^(.*[/\\])") .. "../../"
 local scripts = repo .. "skills/rex-teams/scripts/"
 local a = rex.args
@@ -169,14 +169,9 @@ end
 
 -- Run ---------------------------------------------------------------------------------
 
-local function postman()
-  local f = io.open("/tmp/rex-teams/postman.json")
-  if not f then return nil end
-  local s = rex.json.decode(f:read("*a"))
-  f:close()
-  return s
-end
-local before = postman()
+local live = dofile(scripts .. "postman.lua").live
+local before = {}
+for _, id in ipairs(live()) do before[id] = true end
 local cleanup = {}
 local ok, err = pcall(function()
   math.randomseed(os.time())
@@ -225,22 +220,20 @@ if not ok then print("battery stopped: " .. tostring(err)) end
 
 -- Clean up: the scratch sessions, and the postman if this run started it.
 call("session.destroy", { session_id = session })
-local after = postman()
 local unclosed
-if after and (not before or after.block ~= before.block) then
-  -- postman.json holds only the block and pid, so ask Rex for its session.
+for _, started in ipairs(live()) do if not before[started] then
   local closed, why = pcall(function()
-    local found = call("target.resolve", { queries = { after.block }, kinds = { "block" } }).results[1]
+    local found = call("target.resolve", { queries = { started }, kinds = { "block" } }).results[1]
     if found.status ~= "resolved" then error("Rex can't find it (" .. found.status .. ")", 0) end
     call("session.attach", { session_id = found.target.session_id })
     call("block.close", { session_id = found.target.session_id, block_id = found.target.block_id })
   end)
-  if closed then print("closed the postman this run started: " .. after.block)
+  if closed then print("closed the postman this run started: " .. started)
   else
-    unclosed = "couldn't close the postman this run started, " .. after.block .. ": " .. tostring(why)
+    unclosed = "couldn't close the postman this run started, " .. started .. ": " .. tostring(why)
     print(unclosed)
   end
-end
+end end
 if cleanup.far then pcall(call, "session.destroy", { session_id = cleanup.far }, a.host) end
 print("")
 local header = "| scenario |"
