@@ -53,11 +53,12 @@ local function give_up(msg, what)
 end
 
 -- MSG's paste is over, and is never tried again. ERR, if set, is why it
--- may not have arrived. A recurring alarm drops only this tick.
+-- may not have arrived; its sender hears that, with its text. A recurring
+-- alarm drops only this tick.
 local function finish(msg, err)
   if err then
     print("postman: " .. msg.id .. " may not have arrived: " .. err)
-    tell(msg, "may not have arrived: " .. err .. ". It isn't sent again.")
+    tell(msg, "may not have arrived: " .. err .. ". It isn't sent again. It said: " .. msg.text)
   end
   if not msg.every then return mail.remove(msg.id) end
   msg.pasted_at = nil

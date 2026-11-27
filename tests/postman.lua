@@ -457,7 +457,7 @@ trial("a postman that stops during a paste: the next one never pastes again, and
   start()
   run_to(S.t + 30)
   assert(#r.puts == 1, "pasted " .. #r.puts .. " times")
-  assert(texts(me.puts):find("Message 1795671000-abcd to Reviewer may not have arrived: the postman stopped between its paste and its Enter. It isn't sent again.", 1, true), texts(me.puts))
+  assert(texts(me.puts):find("Message 1795671000-abcd to Reviewer may not have arrived: the postman stopped between its paste and its Enter. It isn't sent again. It said: hi", 1, true), texts(me.puts))
   assert(#queued() == 0)
 end)
 trial("a failed paste or Enter is reported to its sender once, and never pasted again", function()
@@ -477,7 +477,7 @@ trial("a failed paste or Enter is reported to its sender once, and never pasted 
     run_to(S.t + 60)
     fake[fail] = real_fake[fail]
     assert(#r.puts == 1, fail .. ": pasted " .. #r.puts .. " times")
-    assert(texts(me.puts) == "[rex-teams postman · msg " .. me.puts[1].text:match("msg (%S+)%]") .. "] Message 1795671000-abcd to Reviewer may not have arrived: rex: block.event timed out. It isn't sent again.", texts(me.puts))
+    assert(texts(me.puts) == "[rex-teams postman · msg " .. me.puts[1].text:match("msg (%S+)%]") .. "] Message 1795671000-abcd to Reviewer may not have arrived: rex: block.event timed out. It isn't sent again. It said: hi", texts(me.puts))
     assert(#queued() == 0, fail .. ": still queued: " .. table.concat(queued(), " "))
   end
 end)
