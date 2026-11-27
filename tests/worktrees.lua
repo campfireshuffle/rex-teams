@@ -199,7 +199,7 @@ check("team reads current branch and skips unavailable/nonterminal processes", f
   assert(output:find("worktree: " .. canonical, 1, true))
   assert(output:find("block='block:child'", 1, true))
   assert(output:find("Other", 1, true))
-  assert(lib.header("session:test", "block:child"):find("fix-auth (w)", 1, true))
+  assert(lib.header("session:test", "block:child", false, "1-abcd"):find("fix-auth (w)", 1, true))
 end)
 check("team does not use stale cwd from the launch label", function()
   processes["block:child"] = { foreground = { cwd = repo } }

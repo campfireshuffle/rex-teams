@@ -28,32 +28,24 @@ local function last_tick(msg, now)
   return k
 end
 
--- Whether MSG is due at NOW. A due message has msg.d, with the tag its
--- paste carries. The tick rule: a recurring alarm sends its last due tick
--- however late, ticks that pile up collapse into the latest due one, and
--- the schedule never drifts.
+-- Whether MSG is due at NOW. A message being pasted (msg.d) is. The tick
+-- rule: a recurring alarm sends its last due tick, msg.k, however late,
+-- ticks that pile up collapse into the latest due one, and the schedule
+-- never drifts.
 local function due(msg, now)
-  if not msg.every then
-    if now < (msg.at or msg.posted) then return false end
-    msg.d = msg.d or { tag = msg.id }
-    return true
-  end
-  -- A tick that's been pasted is finished as it is, never retagged.
-  if msg.d and msg.d.pasted_at then return true end
+  if msg.d then return true end
+  if not msg.every then return now >= (msg.at or msg.posted) end
   local k = last_tick(msg, now)
-  if k > (msg.k or 0) then
-    msg.k = k
-    msg.d = msg.d or {}
-    msg.d.tag = msg.id .. "." .. k
-  end
-  return msg.d ~= nil
+  if k <= (msg.k or 0) then return false end
+  msg.k = k
+  return true
 end
 
 -- Tell MSG's sender WHAT happened to it. The notice rule: never for a
 -- message to yourself. A notice is to its sender too, so it never causes one.
 local function tell(msg, what)
   if msg.to.host == nil and msg.to.block == msg.from.block then return end
-  mail.notice(msg.from, "Message " .. msg.d.tag .. " to " .. msg.to.name .. " " .. what)
+  mail.notice(msg.from, "Message " .. msg.id .. " to " .. msg.to.name .. " " .. what)
 end
 
 -- MSG can't go: its sender hears WHAT, with its text, and it's deleted.
@@ -78,9 +70,7 @@ end
 -- is due and held, so the rest of its receiver's queue waits.
 function M.deliver(msg, now)
   if not due(msg, now) then return end
-  local d = msg.d
-
-  if d.pasted_at then return finish(msg, "the postman stopped between its paste and its Enter") end
+  if msg.d then return finish(msg, "the postman stopped between its paste and its Enter") end
 
   local reached, there = pcall(pane.exists, msg.to)
   if not reached then return true end -- held, never given up on
@@ -92,10 +82,9 @@ function M.deliver(msg, now)
 
   -- Saved first, so a postman that stops mid-paste never pastes it again,
   -- and a message its sender deleted isn't pasted.
-  d.pasted_at = now
+  msg.d = { pasted_at = now }
   if not mail.write(msg, true) then return end
-  local text = msg.head .. " · msg " .. d.tag .. msg.tail .. msg.text
-  local ok, err = pcall(pane.type, msg.to, text)
+  local ok, err = pcall(pane.type, msg.to, msg.head .. msg.text)
   if ok then return finish(msg) end
   finish(msg, tostring(err))
 end

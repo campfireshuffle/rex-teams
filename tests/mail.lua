@@ -138,8 +138,8 @@ trial("the postman is woken, then the message is queued as one file, atomically"
   assert(msg.from.block == "block:me" and msg.to.host == nil)
   -- The postman looks the session up at delivery, so none is saved.
   assert(msg.to.session == nil and msg.from.session == nil, "a session was saved")
-  assert(msg.head == "[from Chief" and msg.tail:find("^, who can't see this screen%. Reply by running: rex do "), msg.tail)
-  assert(msg.tail:find("block='block:me' message='<reply>'] $"), msg.tail)
+  assert(msg.head:find("[from Chief · msg " .. id .. ", who can't see this screen. Reply by running: rex do ", 1, true) == 1, msg.head)
+  assert(msg.head:find("block='block:me' message='<reply>'] $"), msg.head)
   assert(renames == 1 and ensured == 1 and queued_at_ensure == 0, "queued before the postman was woken")
 end)
 trial("when the postman doesn't start, post raises and nothing is queued, so sending again doesn't double it", function()
@@ -196,18 +196,18 @@ trial("files for another host are named where they'll land, and copied at delive
   assert(msg.text == "see [files: " .. folder .. "/a.md; you can remove " .. folder .. " once you've read them]", msg.text)
   assert(msg.files[1] == "/w/a.md" and #msg.files == 1)
   assert(msg.to.host == "ws" and msg.to.block == "block:far")
-  assert(msg.head == "[from Chief on mac (Rex host id-mac)", msg.head)
+  assert(msg.head:find("[from Chief on mac (Rex host id-mac) · msg " .. id .. ", who can't see this screen.", 1, true) == 1, msg.head)
 end)
 trial("an alarm to yourself is headed as one, with its time", function()
   mail.post({ to = "block:me", text = "check CI", at = 1795671120 })
   local msg = only()
-  assert(msg.head == "[alarm you set" and msg.tail == "] " and msg.at == 1795671120 and not msg.every)
+  assert(msg.head == "[alarm you set · msg " .. msg.id .. "] " and msg.at == 1795671120 and not msg.every, msg.head)
 end)
 trial("a recurring alarm stores its interval exactly, and starts now", function()
   local before = os.time()
   mail.post({ to = "Helper", text = "tick", every = 10.5 })
   local msg = only()
-  assert(msg.every == 10.5 and msg.start >= before and msg.start <= os.time() and msg.head == "[from Chief")
+  assert(msg.every == 10.5 and msg.start >= before and msg.start <= os.time() and msg.head:find("[from Chief · msg ", 1, true) == 1)
 end)
 trial("any positive interval is taken, however short", function()
   mail.post({ to = "Helper", text = "tick", every = 0.5 })
@@ -217,7 +217,7 @@ trial("list reads the queue oldest first, and filters by receiver", function()
   local here = mail.list
   os.execute("mkdir -p " .. quote(root .. "/outbox"))
   local function full(m)
-    m.seq, m.from, m.head, m.tail, m.text = 0, { block = "block:me" }, "[from Chief", "] ", "hi"
+    m.seq, m.from, m.head, m.text = 0, { block = "block:me" }, "[from Chief · msg " .. m.id .. "] ", "hi"
     m.to.name = "Peer"
     return m
   end
@@ -255,7 +255,7 @@ trial("notices to one sender in one second are listed in the order they were wri
     for i = 1, 20 do mail.notice(sender, "n" .. i) end
     local got = mail.list({ block = "block:me" })
     assert(#got == 20, #got)
-    assert(got[1].notice == nil and got[1].head == "[rex-teams postman", "a notice carries a notice field")
+    assert(got[1].notice == nil and got[1].head == "[rex-teams postman · msg " .. got[1].id .. "] ", "a notice carries a notice field")
     for i, msg in ipairs(got) do assert(msg.text == "n" .. i, "notice " .. i .. " is " .. msg.text) end
   end)
   os.time = real_time

@@ -103,7 +103,7 @@ end
 function mail.notice(from, text)
   local id, now = lib.id(), os.time()
   mail.write({ id = id, posted = now, seq = seq(from, now), to = from, from = from,
-    head = "[rex-teams postman", tail = "] ", text = text })
+    head = "[rex-teams postman · msg " .. id .. "] ", text = text })
 end
 
 function mail.post(o)
@@ -135,18 +135,18 @@ function mail.post(o)
   elseif #paths > 0 then
     text = text .. " [files: " .. table.concat(paths, ", ") .. "]"
   end
-  local head, tail
+  local head
   if (o.at or o.every) and not host and block == from_block then
-    head, tail = "[alarm you set", "] "
+    head = "[alarm you set · msg " .. id .. "] "
   else
-    head, tail = lib.header(from_session, from_block, host ~= nil)
+    head = lib.header(from_session, from_block, host ~= nil, id)
   end
   local now = os.time()
   queue({
     id = id, posted = now, seq = seq({ block = block, host = host }, now),
     to = { host = host, block = block, name = name },
     from = { block = from_block },
-    head = head, tail = tail, text = text,
+    head = head, text = text,
     files = host and #paths > 0 and paths or nil,
     at = o.at, every = o.every, start = o.every and now,
   })

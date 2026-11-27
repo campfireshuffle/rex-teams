@@ -154,9 +154,14 @@ function fake.exists(addr)
   if now == "down" then error("rex.server: dial tcp: timeout", 0) end
   return now == "up"
 end
+-- A paste of a recurring alarm records the tick it carries, msg.k, which
+-- the postman saves before the paste.
 function fake.put(addr, text)
   local r = S.receivers[addr.block]
-  r.puts[#r.puts + 1] = { t = S.t, text = text }
+  local f = real_open(root .. "/outbox/" .. (text:match("msg (%d+%-%a+)") or "") .. ".json")
+  local k = f and json.decode(f:read("*a")).k
+  if f then f:close() end
+  r.puts[#r.puts + 1] = { t = S.t, text = text, k = k }
   r.pending = text
 end
 function fake.enter(addr)
@@ -218,7 +223,8 @@ local function start()
 end
 -- A message as mail.post queues it. Its from has no name.
 local function queue(o)
-  local msg = { id = o.id or "1795671000-abcd", posted = o.posted or S.now, head = o.head or "[from Me", tail = o.tail or ", who…] ",
+  local id = o.id or "1795671000-abcd"
+  local msg = { id = id, posted = o.posted or S.now, head = o.alarm and "[alarm you set · msg " .. id .. "] " or "[from Me · msg " .. id .. ", who…] ",
     text = o.text or "hi", to = { host = o.host, block = o.to or "block:to", name = o.name or "Reviewer" },
     from = o.from or { block = "block:me" }, at = o.at, every = o.every, start = o.every and (o.start or S.now),
     seq = o.seq or 0, files = o.files }
@@ -390,11 +396,11 @@ trial("a receiver Rex can't reach holds its queue, and nobody is told; when it's
 end)
 trial("an alarm waiting for its next tick, a one-shot not yet due, or a message to a gone pane doesn't hold up later messages", function()
   local me = receiver("block:me")
-  queue({ id = "1795671000-alrm", head = "[alarm you set", tail = "] ", to = "block:me", every = 60 })
-  queue({ id = "1795671000-late", head = "[alarm you set", tail = "] ", to = "block:me", at = S.now + 300, seq = 1 })
+  queue({ id = "1795671000-alrm", alarm = true, to = "block:me", every = 60 })
+  queue({ id = "1795671000-late", alarm = true, to = "block:me", at = S.now + 300, seq = 1 })
   start()
   run_to(S.t + 61)
-  assert(texts(me.puts) == "[alarm you set · msg 1795671000-alrm.1] hi", texts(me.puts))
+  assert(texts(me.puts) == "[alarm you set · msg 1795671000-alrm] hi" and me.puts[1].k == 1, texts(me.puts))
   queue({ id = "1795671061-mine", posted = S.now, to = "block:me", text = "for me" })
   receiver("block:gone")
   queue({ id = "1795671061-gone", posted = S.now, to = "block:gone" })
@@ -586,7 +592,7 @@ end)
 -- Alarms ------------------------------------------------------------------------
 
 local function alarm(o)
-  o.head, o.tail, o.to = "[alarm you set", "] ", "block:me"
+  o.alarm, o.to = true, "block:me"
   return queue(o)
 end
 trial("a one-shot fires once at its absolute time, not a fresh countdown, and is removed", function()
@@ -616,11 +622,11 @@ trial("a recurring alarm sends one catch-up tick after a restart, keeps its phas
   alarm({ every = 60 })
   run_to(S.t + 140) -- restarted after ticks at +60 and +120 passed
   start()
-  assert(texts(me.puts) == "[alarm you set · msg 1795671000-abcd.2] hi", texts(me.puts))
+  assert(texts(me.puts) == "[alarm you set · msg 1795671000-abcd] hi" and me.puts[1].k == 2, texts(me.puts))
   run_to(S.t + 39)
   assert(#me.puts == 1)
   run_to(S.t + 1)
-  assert(#me.puts == 2 and me.puts[2].t == 1795671180 and me.puts[2].text:find("abcd.3]", 1, true) and #queued() == 1)
+  assert(#me.puts == 2 and me.puts[2].t == 1795671180 and me.puts[2].k == 3 and #queued() == 1)
 end)
 trial("after a sleep, the ticks that piled up collapse into one catch-up tick", function()
   local me = receiver("block:me")
@@ -630,9 +636,9 @@ trial("after a sleep, the ticks that piled up collapse into one catch-up tick", 
   S.t = S.t + 650
   S.now = math.floor(S.t)
   run_to(S.t + 0.5)
-  assert(#me.puts == 1 and me.puts[1].text:find("abcd.10]", 1, true), texts(me.puts))
+  assert(#me.puts == 1 and me.puts[1].k == 10, texts(me.puts))
   run_to(1795671661)
-  assert(#me.puts == 2 and me.puts[2].t == 1795671660 and me.puts[2].text:find("abcd.11]", 1, true))
+  assert(#me.puts == 2 and me.puts[2].t == 1795671660 and me.puts[2].k == 11)
 end)
 trial("fractional recurring alarms fire on their phase, at most a beat late, never early, twice or skipped", function()
   for _, every in ipairs({ 10, 10.5, 13.3 }) do
@@ -649,7 +655,7 @@ trial("fractional recurring alarms fire on their phase, at most a beat late, nev
     assert(#me.puts >= 12, every .. ": " .. #me.puts .. " ticks")
     local last
     for _, p in ipairs(me.puts) do
-      local tick = tonumber(p.text:match("%.(%d+)%]"))
+      local tick = p.k
       local due = 1795671000 + tick * every
       -- A beat late, plus up to a second for whole-second clocks.
       assert(p.t >= due - 1e-9 and p.t < due + P.poll + 1, ("every=%s tick %d at +%.2f, due +%.2f"):format(every, tick, p.t - 1795671000, due - 1795671000))
@@ -691,7 +697,7 @@ trial("slow checks of other receivers never drop an alarm tick that nothing over
     for _ = 1, 600 do run_to(S.t + 0.1) end
     local pasted, last = {}, 0
     for _, p in ipairs(me.puts) do
-      local tick = tonumber(p.text:match("msg 1795671000%-alrm%.(%d+)%]"))
+      local tick = p.k
       assert(tick > last, "tick " .. tick .. " after " .. last)
       assert(p.t >= 1795671000 + every * tick, "tick " .. tick .. " early")
       pasted[tick], last = true, tick
@@ -711,16 +717,16 @@ trial("a held tick goes out however late, and one held past the next tick is ove
   run_to(S.t + 15)
   me.script = { "up" }
   run_to(S.t + 3)
-  assert(texts(me.puts) == "[alarm you set · msg 1795671000-abcd.1] hi", texts(me.puts))
+  assert(texts(me.puts) == "[alarm you set · msg 1795671000-abcd] hi" and me.puts[1].k == 1, texts(me.puts))
   me.script = { "down" }
   run_to(1795671045)
   me.script = { "up" }
   run_to(S.t + 3)
-  assert(#me.puts == 2 and me.puts[2].text:find("msg 1795671000-abcd.4]", 1, true), texts(me.puts))
+  assert(#me.puts == 2 and me.puts[2].k == 4, texts(me.puts))
   run_to(1795671051)
-  assert(#me.puts == 3 and me.puts[3].t == 1795671050 and me.puts[3].text:find("msg 1795671000-abcd.5]", 1, true), texts(me.puts))
+  assert(#me.puts == 3 and me.puts[3].t == 1795671050 and me.puts[3].k == 5, texts(me.puts))
 end)
-trial("a tick cut short by a stop is reported as that tick, and the tick due by the restart still goes out", function()
+trial("a tick cut short by a stop is reported, and the tick due by the restart still goes out", function()
   local r = receiver("block:to")
   local me = receiver("block:me")
   queue({ every = 10 })
@@ -739,8 +745,8 @@ trial("a tick cut short by a stop is reported as that tick, and the tick due by 
   S.t, S.now = 1795671025, 1795671025
   start()
   run_to(S.t + P.poll)
-  assert(texts(me.puts):find("Message 1795671000-abcd.1 to Reviewer may not have arrived: the postman stopped", 1, true), texts(me.puts))
-  assert(#r.puts == 2 and r.puts[2].text:find("msg 1795671000-abcd.2,", 1, true), texts(r.puts))
+  assert(texts(me.puts):find("Message 1795671000-abcd to Reviewer may not have arrived: the postman stopped", 1, true), texts(me.puts))
+  assert(#r.puts == 2 and r.puts[1].k == 1 and r.puts[2].k == 2, texts(r.puts))
 end)
 trial("a failed recurring tick drops only that tick: its sender hears once, even after a restart", function()
   local r = receiver("block:to")
@@ -750,12 +756,12 @@ trial("a failed recurring tick drops only that tick: its sender hears once, even
   start()
   run_to(S.t + 65)
   fake.put = real_fake.put
-  assert(#me.puts == 1 and me.puts[1].text:find("Message 1795671000-abcd.1 to Reviewer may not have arrived", 1, true), texts(me.puts))
+  assert(#me.puts == 1 and me.puts[1].text:find("Message 1795671000-abcd to Reviewer may not have arrived", 1, true), texts(me.puts))
   start()
   run_to(S.t + 30)
   assert(#me.puts == 1, "the sender was told " .. #me.puts .. " times")
   run_to(1795671121)
-  assert(#r.puts == 1 and r.puts[1].text:find("msg 1795671000-abcd.2,", 1, true), texts(r.puts))
+  assert(#r.puts == 1 and r.puts[1].k == 2, texts(r.puts))
 end)
 trial("a paste slower than its alarm's interval doesn't loop: each pass sends the tick due then, in order", function()
   local me = receiver("block:me")
@@ -764,8 +770,8 @@ trial("a paste slower than its alarm's interval doesn't loop: each pass sends th
   start()
   run_to(1795671000 + 100)
   local last = 0
-  for _, p in ipairs(me.delivered) do
-    local k = tonumber(p.text:match("abcd%.(%d+)%]"))
+  for _, p in ipairs(me.puts) do
+    local k = p.k
     assert(k > last, "tick twice")
     -- Each paste carries the last tick due when it began.
     assert(math.floor((p.t - 12 - 1795671000) / 10) == k, "not the latest due tick: " .. k)
@@ -819,7 +825,7 @@ trial("a Rex call or a write that raises once loses, doubles and misorders nothi
       local told = texts(me.delivered):find("Message 1795671000-abcd", 1, true) ~= nil
       local seen = {}
       for _, p in ipairs(r.puts) do
-        local tag = p.text:match("msg (%S+),")
+        local tag = p.text:match("msg (%S+),") .. "." .. tostring(p.k)
         assert(not seen[tag], where .. tag .. " pasted twice")
         seen[tag] = true
       end

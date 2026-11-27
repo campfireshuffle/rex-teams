@@ -164,21 +164,21 @@ function lib.send_command(block, message, host, script)
     .. " block=" .. lib.quote(block) .. " message=" .. lib.quote(message)
 end
 
--- The header of a message, for another host when CROSS is true, in two
--- parts. The postman puts " · msg <id>" between them, so the receiver and
--- the postman can tell messages apart. The sender can't know send.lua's path
--- or its own label on the receiver's host, so the receiver fills them in.
-function lib.header(from_session, from_block, cross)
+-- The header of message ID, for another host when CROSS is true. It names
+-- the message, so the receiver and the postman can tell messages apart. The
+-- sender can't know send.lua's path or its own label on the receiver's
+-- host, so the receiver fills them in.
+function lib.header(from_session, from_block, cross, id)
   local from = lib.name(from_session, from_block)
   if not cross then
-    return "[from " .. from, ", who can't see this screen."
+    return "[from " .. from .. " · msg " .. id .. ", who can't see this screen."
       .. " Reply by running: " .. lib.send_command(from_block, "<reply>") .. "] "
   end
   local r = rex.exec({ "hostname" })
   local name = r and r.ok and r.stdout:match("^%s*(.-)%s*$") or ""
   assert(name ~= "", "can't read this machine's hostname")
-  local id = assert(lib.call("server.status", {}).host_id, "Rex didn't report this host's host_id")
-  return "[from " .. from .. " on " .. name .. " (Rex host " .. id .. ")", ", who can't see this screen."
+  local host = assert(lib.call("server.status", {}).host_id, "Rex didn't report this host's host_id")
+  return "[from " .. from .. " on " .. name .. " (Rex host " .. host .. ") · msg " .. id .. ", who can't see this screen."
     .. " To reply, run this with your rex-teams skill's path and your rex hosts label for that host filled in: "
     .. lib.send_command(from_block, "<reply>", "<label>", "<rex-teams skill>/scripts/send.lua") .. "] "
 end
