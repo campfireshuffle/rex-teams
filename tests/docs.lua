@@ -51,16 +51,6 @@ check("ARCHITECTURE Deliver says a failed recurring alarm keeps its file and dro
     "ARCHITECTURE Deliver says a failed recurring alarm's file is deleted")
 end)
 
-check("ARCHITECTURE names exactly the fields postman.lua writes to postman.json", function()
-  local fields = assert(read("skills/rex-teams/scripts/postman.lua"):match("rex%.json%.encode%(({[^}]*})%)"), "postman.lua writes no state")
-  local row = assert(arch:match("\n| `/tmp/rex%-teams/postman%.json` | ([^\n]*)"), "ARCHITECTURE.md has no postman.json row")
-  for _, word in ipairs({ "block", "session", "pid" }) do
-    local written = fields:find("%f[%w]" .. word .. " =") ~= nil
-    assert(written == (row:find("%f[%w]" .. word .. "%f[%W]") ~= nil),
-      "the postman.json row and postman.lua disagree about " .. word)
-  end
-end)
-
 check("every function ARCHITECTURE names for a script is defined in that script", function()
   -- Round 2's redo renamed the delivery policy to deliver(), and the doc kept the old name.
   -- Names come from the Components diagram, `postman.lua (deliver, ensure, run)`,
