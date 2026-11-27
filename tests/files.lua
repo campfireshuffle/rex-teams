@@ -305,13 +305,10 @@ check("a missing local file: error, nothing copied or sent", function()
     assert(rexes() == 0 and not exists(root .. "/outbox"))
   end
 end)
-check("rex cp exit 3 and 4: the sender is told clearly, nothing pasted", function()
-  for code, want in pairs({ [3] = "has no rex cp", [4] = "can't reach" }) do
-    reset()
-    cp_result = { ok = false, code = code, stdout = "", stderr = "boom " .. code }
-    local notice = undelivered({ host = "ws", block = "Builder", message = "see", file = "a.md" }, want)
-    assert(has(notice, "boom " .. code) and has(notice, "exit " .. code) and has(notice, "wasn't sent"), notice)
-  end
+check("a failed rex cp: the sender gets its exit code and stderr, nothing pasted", function()
+  cp_result = { ok = false, code = 4, stdout = "", stderr = "boom" }
+  local notice = undelivered({ host = "ws", block = "Builder", message = "see", file = "a.md" }, "wasn't sent")
+  assert(has(notice, "failed (exit 4): boom"), notice)
 end)
 check("/tmp/rex-teams missing on the receiver: created first", function()
   remote_root = "missing"

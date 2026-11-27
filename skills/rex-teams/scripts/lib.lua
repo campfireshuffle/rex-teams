@@ -138,17 +138,6 @@ function lib.locate(session, block, paths)
   return found
 end
 
-local cp_exit = { [3] = "that host's Rex has no rex cp", [4] = "can't reach that host" }
-
-local function rex_cp(host, session, from, to)
-  local r, err = rex.exec({ "rex", "-S", host, "cp", "-s", session, "-r", from, to }, { timeout = 600 })
-  if not r then error("rex cp to " .. host .. ": " .. tostring(err), 0) end
-  if not r.ok then
-    error("rex cp to " .. host .. " failed (exit " .. tostring(r.code) .. (cp_exit[r.code] and ", " .. cp_exit[r.code] or "")
-      .. "): " .. (r.stderr or ""):gsub("%s+$", ""), 0)
-  end
-end
-
 -- Where FILES, absolute paths here, land in BLOCK's inbox on another host
 -- for message ID: their paths there, and the folder holding them. Raises if
 -- two share a name or one is the root folder.
@@ -163,40 +152,6 @@ function lib.inbox(block, id, files)
     landed[#landed + 1] = folder .. "/" .. name
   end
   return landed, folder
-end
-
--- Copy FILES into BLOCK's inbox on HOST for message ID, with one rex cp,
--- where lib.inbox says. The receiver's /tmp/rex-teams may be a symlink, and
--- rex cp merges into a symlinked folder only when it's named as the
--- destination, so the stage holds inbox/<block>/<id>/ and goes to
--- /tmp/rex-teams/ itself.
-function lib.send_files(host, session, block, files, id)
-  local uuid = block:gsub("^block:", "")
-  local stage = lib.path("stage", id)
-  local ok, err = pcall(function()
-    local box = table.concat({ stage, "inbox", uuid, id }, "/")
-    lib.mkdir(box)
-    -- -H copies a link named here as its target; links inside a folder
-    -- stay links, as rex cp copies them.
-    local argv = { "cp", "-RH" }
-    for _, file in ipairs(files) do argv[#argv + 1] = file end
-    argv[#argv + 1] = box
-    local r = rex.exec(argv)
-    if not (r and r.ok) then error("can't copy the files to " .. box .. ": " .. (r and r.stderr or ""), 0) end
-    local root = lib.call("block.method", { session_id = session, block_id = block, method = "list_dir", args = { path = "/tmp/rex-teams", limit = 1 } }, host).status
-    if root == "missing" then
-      -- Without this, rex cp would copy inbox to a missing /tmp/rex-teams
-      -- by renaming it rex-teams, so make /tmp/rex-teams first.
-      lib.mkdir(stage .. "/rex-teams")
-      rex_cp(host, session, stage .. "/rex-teams", ":/tmp/")
-    elseif root ~= "ok" then
-      error("/tmp/rex-teams on " .. host .. ": " .. root, 0)
-    end
-    rex_cp(host, session, stage .. "/inbox", ":/tmp/rex-teams/")
-  end)
-  local removed = rex.exec({ "rm", "-rf", stage })
-  if not ok then error(err, 0) end
-  assert(removed and removed.ok, "can't remove " .. stage)
 end
 
 -- Single quotes keep every character literal in POSIX shells.

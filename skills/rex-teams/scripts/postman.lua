@@ -115,8 +115,7 @@ function M.deliver(msg, now)
   d.pasted_at = now
   if not mail.write(msg, true) then return nil end
   local text = msg.head .. " · msg " .. d.tag .. msg.tail .. msg.text
-  local ok, err = pcall(pane.put, msg.to, text)
-  if ok then ok, err = pcall(pane.enter, msg.to) end
+  local ok, err = pcall(pane.type, msg.to, text)
   if not ok then return finish(msg, tostring(err)) end
   return finish(msg)
 end

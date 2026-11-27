@@ -151,6 +151,11 @@ function fake.enter(addr)
     r.pending = nil
   end
 end
+-- pane.type is a paste, then an Enter, so a trial can fail either one.
+function fake.type(addr, text)
+  fake.put(addr, text)
+  fake.enter(addr)
+end
 function fake.attach(addr) S.receivers[addr.block].copies = S.receivers[addr.block].copies + 1 end
 for k, v in pairs(fake) do real_fake[k] = v end
 local function receiver(block, script)
@@ -779,7 +784,7 @@ end)
 -- call. Each message is still delivered or its sender told, and nothing is
 -- pasted twice.
 local faults = {
-  { "pane.exists", fake, "exists" }, { "pane.attach", fake, "attach" }, { "pane.put", fake, "put" }, { "pane.enter", fake, "enter" },
+  { "pane.exists", fake, "exists" }, { "pane.attach", fake, "attach" }, { "pane.type (paste)", fake, "put" }, { "pane.type (Enter)", fake, "enter" },
   { "mail.write", mail, "write" }, { "mail.notice", mail, "notice" }, { "mail.remove", mail, "remove" },
 }
 -- Each case queues 1795671000-abcd, then a message behind it to the same
