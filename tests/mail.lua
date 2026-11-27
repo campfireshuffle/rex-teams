@@ -134,8 +134,10 @@ trial("the postman is woken, then the message is queued as one file, atomically"
   local id, name = mail.post({ to = "Helper", text = "hi" })
   assert(id:match("^%d+%-%a%a%a%a$") and name == "Helper", id .. " " .. name)
   local msg = only()
-  assert(msg.id == id and msg.text == "hi" and msg.to.block == "block:peer" and msg.to.session == "s:me" and msg.to.name == "Helper")
+  assert(msg.id == id and msg.text == "hi" and msg.to.block == "block:peer" and msg.to.name == "Helper")
   assert(msg.from.block == "block:me" and msg.to.host == nil)
+  -- The postman looks the session up at delivery, so none is saved.
+  assert(msg.to.session == nil and msg.from.session == nil, "a session was saved")
   assert(msg.head == "[from Chief" and msg.tail:find("^, who can't see this screen%. Reply by running: rex do "), msg.tail)
   assert(msg.tail:find("block='block:me' message='<reply>'] $"), msg.tail)
   assert(renames == 1 and ensured == 1 and queued_at_ensure == 0, "queued before the postman was woken")
@@ -193,7 +195,7 @@ trial("files for another host are named where they'll land, and copied at delive
   local folder = "/tmp/rex-teams/inbox/far/" .. id
   assert(msg.text == "see [files: " .. folder .. "/a.md; you can remove " .. folder .. " once you've read them]", msg.text)
   assert(msg.files[1] == "/w/a.md" and #msg.files == 1)
-  assert(msg.to.host == "ws" and msg.to.session == "s:far" and msg.to.block == "block:far")
+  assert(msg.to.host == "ws" and msg.to.block == "block:far")
   assert(msg.head == "[from Chief on mac (Rex host id-mac)", msg.head)
 end)
 trial("an alarm to yourself is headed as one, with its time", function()
@@ -215,8 +217,8 @@ trial("list reads the queue oldest first, and filters by receiver", function()
   local here = mail.list
   os.execute("mkdir -p " .. quote(root .. "/outbox"))
   local function full(m)
-    m.seq, m.from, m.head, m.tail, m.text = 0, { session = "s:1", block = "block:me" }, "[from Chief", "] ", "hi"
-    m.to.session, m.to.name = "s:2", "Peer"
+    m.seq, m.from, m.head, m.tail, m.text = 0, { block = "block:me" }, "[from Chief", "] ", "hi"
+    m.to.name = "Peer"
     return m
   end
   mail.write(full({ id = "200-bbbb", posted = 200, to = { block = "block:peer" } }))
@@ -249,10 +251,11 @@ trial("notices to one sender in one second are listed in the order they were wri
   local real_time = os.time
   os.time = function() return 1000 end
   local ok, err = pcall(function()
-    local sender = { session = "s:me", block = "block:me" }
+    local sender = { block = "block:me" }
     for i = 1, 20 do mail.notice(sender, "n" .. i) end
     local got = mail.list({ block = "block:me" })
     assert(#got == 20, #got)
+    assert(got[1].notice == nil and got[1].head == "[rex-teams postman", "a notice carries a notice field")
     for i, msg in ipairs(got) do assert(msg.text == "n" .. i, "notice " .. i .. " is " .. msg.text) end
   end)
   os.time = real_time

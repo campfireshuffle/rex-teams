@@ -111,7 +111,7 @@ end
 -- A notice never causes a notice of its own.
 function mail.notice(from, text)
   local id, now = lib.id(), os.time()
-  mail.write({ id = id, posted = now, seq = seq(from, now), notice = true, to = from, from = from,
+  mail.write({ id = id, posted = now, seq = seq(from, now), to = from, from = from,
     head = "[rex-teams postman", tail = "] ", text = text })
 end
 
@@ -156,8 +156,8 @@ function mail.post(o)
   local now = os.time()
   queue({
     id = id, posted = now, seq = seq({ block = block, host = host }, now),
-    to = { host = host, session = session, block = block, name = name },
-    from = { session = from_session, block = from_block },
+    to = { host = host, block = block, name = name },
+    from = { block = from_block },
     head = head, tail = tail, text = text,
     files = host and #paths > 0 and paths or nil,
     at = o.at, every = o.every, start = o.every and now,
