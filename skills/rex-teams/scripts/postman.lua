@@ -20,7 +20,7 @@ M.poll = 2 -- seconds between passes
 -- Delivery -------------------------------------------------------------
 
 -- The last tick of a recurring alarm due at NOW, 0 before the first. Tick
--- k falls at start + k*every. A fractional every can round down (33 / 1.1
+-- k falls at start + k*every. A fractional every can round down (309 / 10.3
 -- gives 29.999...), so that tick goes out one beat later.
 local function last_tick(msg, now)
   return math.floor((now - msg.start) / msg.every)

@@ -3,13 +3,13 @@
 --
 --   mail.post{ to, host?, text, files?, at?, every? } -> id, name
 --
--- post checks everything first and raises if anything is wrong. It resolves
--- TO (a block ID, short ID or label on HOST, a label from `rex hosts`) once,
--- makes sure this host's postman is running, then writes the message to
+-- post checks TEXT, TO and FILES, and resolves TO (a block ID, short ID or
+-- label on HOST, a label from `rex hosts`) once. Then it makes sure this
+-- host's postman is running, writes the message to
 -- /tmp/rex-teams/outbox/<id>.json and returns at once. When post raises,
 -- nothing is queued, so sending again doesn't double the message. NAME is
--- the receiver's name. The postman delivers it; see postman.lua. Delete the file to drop the
--- message or cancel the alarm.
+-- the receiver's name. The postman delivers it; see postman.lua. Delete the
+-- file to drop the message or cancel the alarm.
 --
 -- AT is a unix time; EVERY repeats every EVERY seconds from now. The
 -- callers (send.lua, alarm.lua) pass HOST as a string, and at most one of
