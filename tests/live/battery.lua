@@ -119,6 +119,10 @@ local function delivered(block, id, seconds)
   return ok, now() - t0
 end
 local function seen(block, id) return screen(block):find("msg " .. id, 1, true) ~= nil end
+-- Whether TEXT shows on the screen, however it wraps.
+local function shows(block, text, host, s)
+  return (screen(block, host, s):gsub("%s", "")):find((text:gsub("%s", "")), 1, true) ~= nil
+end
 
 local scenarios = {}
 function scenarios.idle(c)
@@ -144,7 +148,7 @@ function scenarios.file(c)
   f:close()
   local id = run("send.lua", { block = c.block, message = "File attached." .. quiet, file = path })
   local ok, took = delivered(c.block, id)
-  return ok and seen(c.block, id) and screen(c.block):find(path, 1, true) ~= nil, ("%.1fs"):format(took)
+  return ok and seen(c.block, id) and shows(c.block, path), ("%.1fs"):format(took)
 end
 function scenarios.shell(c)
   local id = send(c.block, "Shell paste.")
@@ -211,7 +215,7 @@ local ok, err = pcall(function()
     ok2, took = delivered(b, id, 90)
     local landed = "/tmp/rex-teams/inbox/" .. b:gsub("^block:", "") .. "/" .. id
     local there = method(b, "list_dir", { path = landed .. "/far-note.md", limit = 1 }, a.host, far).status
-    record("pi@" .. a.host, "cross-host file=", ok2 and there == "not_dir" and screen(b, a.host, far):find("msg " .. id, 1, true) ~= nil,
+    record("pi@" .. a.host, "cross-host file=", ok2 and there == "not_dir" and shows(b, landed .. "/far-note.md", a.host, far),
       ("%.1fs, file %s"):format(took, there))
 
   end
