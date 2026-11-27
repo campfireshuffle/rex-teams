@@ -301,6 +301,31 @@ trial("a second postman sees the first, closes its own block and stops", functio
   start()
   assert(S.stopped == 0 and S.closed[1] == "block:pm" and #S.out == 0 and #S.timers == 0)
 end)
+trial("a postman stops before its next delivery once postman.json is gone or names another postman", function()
+  -- With nothing queued, it stops too, rather than idle on as a second postman.
+  for _, case in ipairs({ "removed", "removed, idle", "rewritten", "rewritten mid-pass" }) do
+    reset()
+    local r = receiver("block:to")
+    start()
+    if case ~= "removed, idle" then
+      queue({ id = "1795671000-aaaa", text = "first" })
+      queue({ id = "1795671000-bbbb", text = "second", seq = 1 })
+    end
+    local claim = json.encode({ block = "block:other", pid = 8 })
+    if case:find("^removed") then os.remove(root .. "/postman.json") end
+    if case == "rewritten" then lib.write(root .. "/postman.json", claim) end
+    if case == "rewritten mid-pass" then
+      fake.put = function(addr, text)
+        lib.write(root .. "/postman.json", claim)
+        return real_fake.put(addr, text)
+      end
+    end
+    run_to(S.t + 10)
+    local want = case == "rewritten mid-pass" and "first" or ""
+    assert(texts(r.delivered):gsub("%[[^]]*%] ", "") == want, case .. ": delivered " .. texts(r.delivered))
+    assert(S.stopped == 0 and S.closed[1] == "block:pm" and #S.timers == 0, case .. ": didn't stop")
+  end
+end)
 trial("a postman.json whose process is gone is taken over", function()
   S.blocks["block:first"] = { session = "s:home", pid = 100 }
   lib.write(root .. "/postman.json", json.encode({ block = "block:first", pid = 99 }))

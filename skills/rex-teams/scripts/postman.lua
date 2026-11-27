@@ -259,18 +259,28 @@ function M.run()
     assert(os.rename(state_file .. ".tmp", state_file))
     return true
   end)
-  if not claimed then
-    print("postman: another postman is running")
+  local function quit(why)
+    print("postman: " .. why)
     lib.call("block.close", { session_id = me_session, block_id = me })
     rex.stop(0)
-    return
   end
+  if not claimed then return quit("another postman is running") end
   print("postman: delivering " .. mail.dir())
+
+  -- Once postman.json is gone, the next message's ensure starts another
+  -- postman, which claims it. Only the postman it names may deliver, or
+  -- both would paste the same message.
+  local function deposed()
+    local s = read_state()
+    return not (s and s.block == me)
+  end
 
   local said -- the error the last pass stopped on
   local function pass()
+    if deposed() then return quit("postman.json no longer names this postman") end
     -- The next pass comes when something is due, and at most M.poll from now.
     local next_at = os.time() + M.poll
+    local stop = false
     local ok, err = pcall(function()
       local queues = {}
       for _, msg in ipairs(mail.list()) do
@@ -281,6 +291,8 @@ function M.run()
       for _, queue in pairs(queues) do
         for _, msg in ipairs(queue) do
           if not msg.dead then
+            -- Another postman may have claimed during this pass.
+            if deposed() then stop = true return end
             local delivered, at = pcall(M.deliver, msg, os.time())
             if not delivered then
               -- Its file is as it was, so the next pass tries it again,
@@ -296,6 +308,7 @@ function M.run()
         end
       end
     end)
+    if stop then return quit("postman.json no longer names this postman") end
     -- A file someone broke stops every pass until it's deleted: say so once.
     if ok then
       said = nil
