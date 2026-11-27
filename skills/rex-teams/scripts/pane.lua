@@ -2,10 +2,10 @@
 -- pane is there, and the paste and Enter that deliver to it. Nothing here
 -- reads the screen.
 --
--- An address is { host?, session, block }; host is a label from `rex hosts`,
--- or nil for this host. A tab can move to another session after a message
--- is posted, so each call asks Rex for the block's session now and attaches
--- to it, and never uses the saved session.
+-- An address is { host?, block }; host is a label from `rex hosts`, or nil
+-- for this host. A tab can move to another session after a message is
+-- posted, so each call asks Rex for the block's session now and attaches to
+-- it.
 local dir = debug.getinfo(1, "S").source:gsub("^@", ""):match("^(.*[/\\])")
 local lib = dofile(dir .. "lib.lua")
 local pane = {}

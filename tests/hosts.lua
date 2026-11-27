@@ -14,7 +14,9 @@ local function server(name, host_id, sessions)
   local s = { name = name, host_id = host_id, sessions = sessions }
   function s.call(method, args)
     calls[#calls + 1] = name .. " " .. method
-    if method == "session.attach" or method == "block.method" then return {} end
+    if method == "session.attach" then return {} end
+    -- Like Rex, list_dir always answers with entries: here, an empty outbox.
+    if method == "block.method" then return args.method == "list_dir" and { status = "ok", entries = {} } or {} end
     if method == "server.status" then return { host_id = s.host_id } end
     if method == "session.list" then
       local out = {}
@@ -238,8 +240,9 @@ check("team.lua host= lists remote agents with host= in their commands", functio
   assert(has(all, "Builder  rex do "), all)
   assert(has(all, " host='ws' block='block:far-00000-cccccc' message='<message>'"), all)
   assert(not has(all, "(you)") and not has(all, "session="), all)
-  -- This host is asked only for its own outbox, for the queued counts.
-  for _, c in ipairs(calls) do assert(not c:find("^local ") or c == "local block.method", "unexpected call " .. c) end
+  -- team.lua host= reads only the other host: this host's git can't read
+  -- remote checkouts, and the outbox counts are gone. So no local calls.
+  for _, c in ipairs(calls) do assert(not c:find("^local "), "unexpected call " .. c) end
 end)
 check("team.lua host= names an unlabeled session by its ID", function()
   reset()

@@ -91,7 +91,7 @@ To reply to a message, run the command in its header.
 
 Don't rename the Rex session or your tab, even when Rex asks you to name your session. They belong to the user, and tab labels are how agents find each other.
 
-`send.lua` prints `queued message <id> for <name>` and returns; don't wait or check. The postman types it in at once, busy receiver or not, and its CLI decides when to act on it. The postman waits only while Rex can't reach the receiver's host, or for an alarm's time. While another host is unreachable, every delivery from this host can be delayed about 10 s. If the receiver's pane is gone, or the paste or Enter failed, you get one message from `rex-teams postman` saying why; a failed message isn't sent again.
+`send.lua` prints `queued message <id> for <name>` and returns; don't wait or check. The postman types it in at once, busy receiver or not, and its CLI decides when to act on it. The postman waits only while Rex can't reach the receiver's host, or for an alarm's time. While another host is unreachable, every delivery from this host can be delayed about 10 s. If the receiver's pane is gone, its files can't be copied, or the paste or Enter failed, you get one message from `rex-teams postman` saying why; a failed message isn't sent again.
 
 These commands are quoted for POSIX shells. Write your text inside the single quotes, and write a `'` in it as `'\''` (`''` in PowerShell).
 

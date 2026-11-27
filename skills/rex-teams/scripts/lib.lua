@@ -124,7 +124,7 @@ function lib.locate(session, block, paths)
       local up = lib.call("block.method", { session_id = session, block_id = block, method = "list_dir",
         args = { path = parent == "" and "/" or parent:match("^%a:$") and parent .. "\\" or parent, files = true, prefix = name } })
       local status = up.status == "not_dir" and "missing" or up.status
-      for _, entry in ipairs(up.entries or {}) do
+      for _, entry in ipairs(up.entries) do
         if entry.name == name then status = "found" end
       end
       if status ~= "found" then error("file " .. path .. ": " .. (status == "ok" and "missing" or status), 0) end
@@ -234,13 +234,19 @@ function lib.header(from_session, from_block, cross)
     .. lib.send_command(from_block, "<reply>", "<label>", "<rex-teams skill>/scripts/send.lua") .. "] "
 end
 
--- A name for a message: the time and four random letters.
+-- A name for a message: the time and four random letters. Two posts in
+-- one second can draw the same letters, so draw again while the outbox
+-- holds that name, or the second would replace the first.
 local seeded
 function lib.id()
   if not seeded then math.randomseed(os.time() + os.clock() * 1e6) seeded = true end
-  local id = tostring(os.time()) .. "-"
-  for _ = 1, 4 do id = id .. string.char(math.random(97, 122)) end
-  return id
+  while true do
+    local id = tostring(os.time()) .. "-"
+    for _ = 1, 4 do id = id .. string.char(math.random(97, 122)) end
+    local f = io.open(lib.path("outbox", id .. ".json"))
+    if not f then return id end
+    f:close()
+  end
 end
 
 return lib

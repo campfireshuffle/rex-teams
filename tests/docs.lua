@@ -48,7 +48,7 @@ check("SKILL.md and ARCHITECTURE Deliver say an unreachable host delays every de
 end)
 
 check("ARCHITECTURE Deliver says a failed recurring alarm keeps its file and drops only that tick", function()
-  -- postman.lua lost() clears only msg.d for a recurring alarm, and serve saves it.
+  -- postman.lua finish() clears only msg.d for a recurring alarm and saves it.
   assert(deliver:find("a recurring alarm keeps its file and drops only that tick", 1, true),
     "ARCHITECTURE Deliver says a failed recurring alarm's file is deleted")
 end)
@@ -60,6 +60,28 @@ check("ARCHITECTURE names exactly the fields postman.lua writes to postman.json"
     local written = fields:find("%f[%w]" .. word .. " =") ~= nil
     assert(written == (row:find("%f[%w]" .. word .. "%f[%W]") ~= nil),
       "the postman.json row and postman.lua disagree about " .. word)
+  end
+end)
+
+check("every function ARCHITECTURE names for a script is defined in that script", function()
+  -- Round 2's redo renamed the delivery policy to deliver(), and the doc kept the old name.
+  -- Names come from the Components diagram, `postman.lua (deliver, ensure, run)`,
+  -- and from each script's row in the File table, `name(` in code spans.
+  local named = {}
+  for script, list in arch:gmatch("(%w+)%.lua %(([^)]*)%)") do
+    for name in list:gmatch("[%w_]+") do table.insert(named, { script, name }) end
+  end
+  for script, row in arch:gmatch("\n| `(%w+)%.lua` | ([^\n]*)") do
+    for span in row:gmatch("`([^`]*)`") do
+      for name in span:gmatch("([%w_.]+)%(") do table.insert(named, { script, name:match("[%w_]+$") }) end
+    end
+  end
+  assert(#named > 0, "ARCHITECTURE.md names no script functions")
+  for _, pair in ipairs(named) do
+    local script, name = pair[1], pair[2]
+    local code = read("skills/rex-teams/scripts/" .. script .. ".lua")
+    assert(code:find("function [%w_]+%." .. name .. "%(") or code:find("local function " .. name .. "%("),
+      "ARCHITECTURE.md names " .. name .. "() for " .. script .. ".lua, which doesn't define it")
   end
 end)
 

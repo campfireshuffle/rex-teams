@@ -103,7 +103,7 @@ trial("an alarm is a queued message to you, at an absolute time", function()
   assert(#q == 1, #q)
   local m = q[1]
   assert(m.at == 1795671120 and not m.every and m.text == 'Check "CI" — ünïcode')
-  assert(m.head == "[alarm you set" and m.tail == "] " and m.to.block == "block:agent" and m.to.session == "session:s")
+  assert(m.head == "[alarm you set" and m.tail == "] " and m.to.block == "block:agent")
   assert(S.printed[1] == "alarm: " .. m.id .. " for Agent. Cancel it with: rm " .. quote(root .. "/outbox/" .. m.id .. ".json"), S.printed[1])
   assert(#S.printed == 1 and S.ensured[1], "the postman wasn't ensured, or more was printed")
 end)
