@@ -48,7 +48,7 @@ check("SKILL.md and ARCHITECTURE Deliver say an unreachable host delays every de
 end)
 
 check("ARCHITECTURE Deliver says a failed recurring alarm keeps its file and drops only that tick", function()
-  -- postman.lua finish() clears only msg.d for a recurring alarm and saves it.
+  -- postman.lua finish() clears only pasted_at for a recurring alarm and saves it.
   assert(deliver:find("a recurring alarm keeps its file and drops only that tick", 1, true),
     "ARCHITECTURE Deliver says a failed recurring alarm's file is deleted")
 end)

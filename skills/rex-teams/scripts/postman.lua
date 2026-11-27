@@ -1,13 +1,13 @@
 -- One postman per Rex host delivers the queued messages in
 -- /tmp/rex-teams/outbox/<id>.json, each of which also holds its delivery
--- state (msg.d). Every 2 s it reads the outbox and delivers what's due,
+-- state: pasted_at, and a recurring alarm's last tick, k. Every 2 s it reads the outbox and delivers what's due,
 -- oldest first per receiver; deleting a file cancels it. The oldest live
 -- block labelled "rex-teams postman" is the postman, and OSC 7577 lets Rex
 -- start it again after a restart.
 --
 -- The save rule: save a message before its paste, and write the sender's
--- notice before removing the message. Whatever raises
--- leaves the file as it was on disk.
+-- notice before removing the message. Whatever raises leaves the file as
+-- it was on disk.
 local dir = debug.getinfo(1, "S").source:gsub("^@", ""):match("^(.*[/\\])")
 local lib = dofile(dir .. "lib.lua")
 local mail = dofile(dir .. "mail.lua")
@@ -28,12 +28,10 @@ local function last_tick(msg, now)
   return k
 end
 
--- Whether MSG is due at NOW. A message being pasted (msg.d) is. The tick
--- rule: a recurring alarm sends its last due tick, msg.k, however late,
--- ticks that pile up collapse into the latest due one, and the schedule
--- never drifts.
+-- Whether MSG is due at NOW. The tick rule: a recurring alarm sends its
+-- last due tick, msg.k, however late, ticks that pile up collapse into the
+-- latest due one, and the schedule never drifts.
 local function due(msg, now)
-  if msg.d then return true end
   if not msg.every then return now >= (msg.at or msg.posted) end
   local k = last_tick(msg, now)
   if k <= (msg.k or 0) then return false end
@@ -62,15 +60,15 @@ local function finish(msg, err)
     tell(msg, "may not have arrived: " .. err .. ". It isn't sent again.")
   end
   if not msg.every then return mail.remove(msg.id) end
-  msg.d = nil
+  msg.pasted_at = nil
   mail.write(msg, true)
 end
 
 -- Deliver MSG as far as it can go at NOW, os.time(). Returns true if MSG
 -- is due and held, so the rest of its receiver's queue waits.
 function M.deliver(msg, now)
+  if msg.pasted_at then return finish(msg, "the postman stopped between its paste and its Enter") end
   if not due(msg, now) then return end
-  if msg.d then return finish(msg, "the postman stopped between its paste and its Enter") end
 
   local reached, there = pcall(pane.exists, msg.to)
   if not reached then return true end -- held, never given up on
@@ -82,7 +80,7 @@ function M.deliver(msg, now)
 
   -- Saved first, so a postman that stops mid-paste never pastes it again,
   -- and a message its sender deleted isn't pasted.
-  msg.d = { pasted_at = now }
+  msg.pasted_at = now
   if not mail.write(msg, true) then return end
   local ok, err = pcall(pane.type, msg.to, msg.head .. msg.text)
   if ok then return finish(msg) end
