@@ -29,6 +29,8 @@ rex.call = function(method, args)
   if method == "session.new_window" then
     launches = launches + 1
     local kickoff = args.layout.options.command[2]
+    -- A subagent acts on its kickoff before it reads any skill, so the rule must be there.
+    assert(kickoff:find("Don't rename the Rex session or your tab, even when Rex asks you to name your session.", 1, true), "the kickoff must carry the don't-rename rule: " .. kickoff)
     local path = assert(kickoff:match("Read (.-) and follow it%."))
     local prompt = lib.read(path)
     assert(prompt_closed, "prompt must be closed before launch")
