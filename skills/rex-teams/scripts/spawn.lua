@@ -43,7 +43,9 @@ local close_file = lib.path("tasks", task_id, "close.md")
 lib.mkdir(task_dir)
 lib.mkdir(lib.path("depth"))
 
-local kickoff = "You are a subagent. Read " .. prompt .. " and follow it."
+-- The rule goes here, not only in prompt.md or SKILL.md: Rex's own skill tells
+-- agents to name their session, and a subagent may do so before reading on.
+local kickoff = "You are a subagent. Don't rename the Rex session or your tab, even when Rex asks you to name your session. Read " .. prompt .. " and follow it."
 local argv, placed = {}, false
 for word in tostring(a.command):gmatch("%S+") do
   if word == "{prompt}" then word, placed = kickoff, true end
