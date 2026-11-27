@@ -119,10 +119,15 @@ local function delivered(block, id, seconds)
   local ok = wait_for(function() return not exists(outbox(id)) end, seconds or 30)
   return ok, now() - t0
 end
-local function seen(block, id) return screen(block):find("msg " .. id, 1, true) ~= nil end
--- Whether TEXT shows on the screen, however it wraps.
+-- Whether message ID shows on the screen within a few seconds: a CLI can
+-- take a moment to draw what was pasted.
+local function seen(block, id)
+  return wait_for(function() return screen(block):find("msg " .. id, 1, true) ~= nil end, 5)
+end
+-- Whether TEXT shows on the screen, however it wraps. OpenCode draws a ┃
+-- gutter on each wrapped line.
 local function shows(block, text, host, s)
-  return (screen(block, host, s):gsub("%s", "")):find((text:gsub("%s", "")), 1, true) ~= nil
+  return (screen(block, host, s):gsub("%s", ""):gsub("┃", "")):find((text:gsub("%s", "")), 1, true) ~= nil
 end
 
 local scenarios = {}
