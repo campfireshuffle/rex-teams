@@ -9,7 +9,7 @@ local calls, events, servers
 local function server(name, blocks)
   local s = {}
   function s.call(method, args)
-    calls[#calls + 1] = name .. " " .. method .. (args.method and " " .. args.method or "")
+    calls[#calls + 1] = name .. " " .. method .. " " .. (args.method or args.session_id or "")
     if method == "target.resolve" then
       local b = blocks[args.queries[1]]
       if not b then return { results = { { status = "not_found" } } } end
@@ -76,6 +76,20 @@ trial("put pastes, and enter presses and releases Enter, in the addressed pane",
     assert(events[i + 1].event.type == "key" and k.key == "enter" and k.text == "\r" and k.action == action)
   end
   for _, e in ipairs(events) do assert(e.server == "local" and e.session == "s:1" and e.block == "b:1") end
+end)
+trial("a pane whose tab moved to another session after the post gets the message there", function()
+  local blocks = { ["b:1"] = { session = "s:1" } }
+  reset(blocks)
+  local addr = { session = "s:1", block = "b:1" }
+  pane.put(addr, "before")
+  blocks["b:1"].session = "s:2"
+  calls, events = {}, {}
+  pane.put(addr, "after")
+  pane.enter(addr)
+  assert(#events == 3, #events .. " events")
+  for _, e in ipairs(events) do assert(e.session == "s:2", "an event went to " .. e.session) end
+  assert(calls[1] == "local target.resolve " and calls[2] == "local session.attach s:2", "put didn't attach to s:2 first: " .. table.concat(calls, ", "))
+  assert(pane.exists(addr))
 end)
 trial("another host's pane is checked and typed into through rex.server", function()
   reset({}, { ["b:far"] = { session = "s:far" } })
