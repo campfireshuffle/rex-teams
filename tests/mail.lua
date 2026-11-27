@@ -261,6 +261,22 @@ trial("notices to one sender in one second are listed in the order they were wri
   os.time = real_time
   assert(ok, err)
 end)
+trial("a post never replaces a queued file, even when the time and letters repeat", function()
+  local real_time, real_random = os.time, math.random
+  -- Two posts in one second draw the same four letters, then other ones.
+  local letters = { 97, 97, 97, 97, 97, 97, 97, 97, 98, 98, 98, 98 }
+  os.time = function() return 1000 end
+  math.random = function() return table.remove(letters, 1) or 99 end
+  local ok, err = pcall(function()
+    local a = mail.post({ to = "Helper", text = "first" })
+    local b = mail.post({ to = "Helper", text = "second" })
+    assert(a ~= b, "both posts got " .. a)
+    local names = outbox_files()
+    assert(#names == 2, "want two queued files, got " .. table.concat(names, " "))
+  end)
+  os.time, math.random = real_time, real_random
+  assert(ok, err)
+end)
 trial("a write of a file someone deleted doesn't bring it back", function()
   os.execute("mkdir -p " .. quote(root .. "/outbox"))
   assert(mail.write({ id = "300-cccc" }, true) == false)
