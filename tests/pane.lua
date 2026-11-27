@@ -54,9 +54,11 @@ end)
 trial("exists: a pane whose program exited is gone; a shell whose last command failed isn't", function()
   reset({
     ["b:exited"] = { session = "s:1", process = { last_exit = { exit_code = 1 } } },
+    ["b:quit"] = { session = "s:1", process = { last_exit = { exit_code = 0 } } },
     ["b:shell"] = { session = "s:1", process = { foreground = { pid = 2, name = "fish" } } },
   })
   assert(pane.exists({ session = "s:1", block = "b:exited" }) == false)
+  assert(pane.exists({ session = "s:1", block = "b:quit" }) == false, "a program that exited cleanly counts as alive")
   assert(pane.exists({ session = "s:1", block = "b:shell" }) == true)
 end)
 trial("exists raises when Rex can't reach the host", function()
