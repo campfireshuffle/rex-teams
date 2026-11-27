@@ -37,11 +37,6 @@ check("SKILL.md mentions -s only if one of its commands uses it", function()
   error("SKILL.md describes -s, but none of its commands uses it")
 end)
 
-check("SKILL.md doesn't say team.lua counts only your messages", function()
-  -- team.lua counts the messages from every sender; see tests/hosts.lua.
-  local teammates = assert(skill:match("\n## Teammates\n(.-)\n## "))
-  assert(not teammates:find("your messages", 1, true), "SKILL.md says team.lua counts only your messages")
-end)
 check("SKILL.md and ARCHITECTURE Deliver say an unreachable host delays every delivery about 10 s per check", function()
   -- One postman serves every receiver in one loop, and a check of a host
   -- that's down blocks about 10 s (decision 006: no backoff).

@@ -261,62 +261,6 @@ check("team.lua on this host prints commands without host= or session=", functio
   assert(has(all, "block='block:peer-00000-bbbbbb' message='<message>'"), all)
   assert(not has(all, "host=") and not has(all, "session="), all)
 end)
--- A queued message with every field, as mail.post writes it.
-local function full(m)
-  for k, v in pairs({ seq = 0, head = "[from Chief", tail = "] ", text = "hi" }) do if m[k] == nil then m[k] = v end end
-  return m
-end
-check("team.lua says how many messages are queued on this host for an agent, and why", function()
-  reset()
-  load()
-  local mail = real_dofile(lib.dir .. "mail.lua")
-  os.execute("mkdir -p '" .. tmp .. "/outbox'")
-  local to = { session = "session:me", block = "block:peer-00000-bbbbbb", name = "Helper" }
-  local from = { session = "session:me", block = "block:me-000000-aaaaaa", name = "Chief" }
-  mail.write(full({ id = "100-aaaa", posted = 100, to = to, from = from, d = { tag = "100-aaaa", why = "Rex can't reach it (timeout)" } }))
-  mail.write(full({ id = "101-bbbb", posted = 101, to = to, from = from }))
-  mail.write(full({ id = "102-cccc", posted = 102, to = to, from = from, dead = "gone" }))
-  mail.write(full({ id = "103-dddd", posted = 103, to = to, from = from, notice = true }))
-  dofile = real_dofile
-  local plain = servers[""].call
-  rex.call = function(method, args)
-    if method == "block.method" and args.method == "list_dir" then
-      local entries = {}
-      for _, id in ipairs({ "100-aaaa", "101-bbbb", "102-cccc", "103-dddd" }) do entries[#entries + 1] = { name = id .. ".json" } end
-      return { status = "ok", entries = entries }
-    end
-    return plain(method, args)
-  end
-  assert(run("team.lua", {}))
-  local all = table.concat(printed, "\n")
-  assert(has(all, "block='block:peer-00000-bbbbbb' message='<message>'\n  (2 messages queued on this host: Rex can't reach it (timeout))\n"
-    .. "  (1 message not delivered; its sender was told)"), all)
-end)
-check("team.lua counts an alarm only once it's due", function()
-  reset()
-  load()
-  local mail = real_dofile(lib.dir .. "mail.lua")
-  os.execute("mkdir -p '" .. tmp .. "/outbox'")
-  local to = { session = "session:me", block = "block:peer-00000-bbbbbb", name = "Helper" }
-  local from = { session = "session:me", block = "block:me-000000-aaaaaa", name = "Chief" }
-  local later = os.time() + 3600
-  mail.write(full({ id = "100-aaaa", posted = 100, to = to, from = from, at = later }))
-  mail.write(full({ id = "101-bbbb", posted = 101, to = to, from = from, every = 3600, start = later }))
-  mail.write(full({ id = "102-cccc", posted = 102, to = to, from = from, at = 102, d = { tag = "102-cccc" } }))
-  dofile = real_dofile
-  local plain = servers[""].call
-  rex.call = function(method, args)
-    if method == "block.method" and args.method == "list_dir" then
-      local entries = {}
-      for _, id in ipairs({ "100-aaaa", "101-bbbb", "102-cccc" }) do entries[#entries + 1] = { name = id .. ".json" } end
-      return { status = "ok", entries = entries }
-    end
-    return plain(method, args)
-  end
-  assert(run("team.lua", {}))
-  local all = table.concat(printed, "\n")
-  assert(has(all, "block='block:peer-00000-bbbbbb' message='<message>'\n  (1 message queued on this host)"), all)
-end)
 check("two sends in one second are listed, and so delivered, in the order they were sent", function()
   reset()
   local plain = servers[""].call

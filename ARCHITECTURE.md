@@ -26,7 +26,7 @@ send.lua  alarm.lua  team.lua  spawn.lua        entry points: parse arguments, p
 |---|---|
 | `send.lua` | `mail.post` for a message; prints `queued message <id> for <name>`. |
 | `alarm.lua` | `mail.post` with `at` or `every`; `list=true` lists your alarms. |
-| `team.lua` | Lists agents with ready `send.lua` commands, and how many messages are queued on this host for each. |
+| `team.lua` | Lists agents with ready `send.lua` commands, and the branch and worktree of each agent in a linked worktree. |
 | `spawn.lua` | Starts a subagent. Its report is a `send.lua` command, so it's an ordinary message. |
 | `mail.lua` | `mail.post{to, host?, text, files?, at?, every?} -> id, name` and `mail.list() -> messages`. Post checks the text, the receiver and the files, and raises before queueing, in a plain sentence; `send.lua` and `alarm.lua` check their own arguments. List raises, naming the file, on one that isn't JSON. |
 | `postman.lua` | `step(msg, check, now) -> action`, the pure delivery policy; `ensure()`, which starts the postman or raises; `rule()`, the trust rule; and the worker loop. |

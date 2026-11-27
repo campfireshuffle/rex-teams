@@ -77,7 +77,7 @@ Use the retained worktree as `cwd` when resuming work that needs its changes. Th
 
 Your teammates are the other labeled tabs and panes in your session, except tabs prefixed with a possibly indented `↳`, which are subagents. The user may also tell you about teammates elsewhere.
 
-List your team, then message a teammate by running the command printed next to its name, with your message in place of `<message>`. The command targets the teammate's block ID, because labels can change or repeat and IDs don't. `team.lua` also says how many messages, from anyone, are queued on this host for each agent and why, and how many the postman gave up on. Messages a sender on another host sent you sit in its outbox, so they aren't counted. An alarm counts once it's due; the postman's notices don't count.
+List your team, then message a teammate by running the command printed next to its name, with your message in place of `<message>`. The command targets the teammate's block ID, because labels can change or repeat and IDs don't.
 
 ```sh
 rex do <skill>/scripts/team.lua

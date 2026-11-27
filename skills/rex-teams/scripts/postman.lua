@@ -101,9 +101,8 @@ function M.deliver(msg, now)
   while true do
     local reached, there = pcall(pane.exists, msg.to)
     if not reached then
-      -- Held, never given up on. Saved for team.lua to say why, and so a
-      -- copy that's done isn't done again.
-      d.why = "Rex can't reach it (" .. tostring(there) .. ")"
+      -- Held, never given up on. Saved so a copy that's done isn't done
+      -- again.
       mail.write(msg, true)
       return now + M.poll
     end
