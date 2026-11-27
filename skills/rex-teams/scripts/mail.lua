@@ -52,7 +52,7 @@ local function names(pattern)
   local r = lib.call("block.method", { session_id = here[1], block_id = here[2], method = "list_dir",
     args = { path = mail.dir(), files = true, limit = 10000 } })
   local out = {}
-  for _, entry in ipairs(r.entries or {}) do
+  for _, entry in ipairs(r.entries) do
     local name = entry.name:match(pattern)
     if name then out[#out + 1] = name end
   end

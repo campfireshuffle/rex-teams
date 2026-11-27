@@ -14,7 +14,9 @@ local function server(name, host_id, sessions)
   local s = { name = name, host_id = host_id, sessions = sessions }
   function s.call(method, args)
     calls[#calls + 1] = name .. " " .. method
-    if method == "session.attach" or method == "block.method" then return {} end
+    if method == "session.attach" then return {} end
+    -- Like Rex, list_dir always answers with entries: here, an empty outbox.
+    if method == "block.method" then return args.method == "list_dir" and { status = "ok", entries = {} } or {} end
     if method == "server.status" then return { host_id = s.host_id } end
     if method == "session.list" then
       local out = {}

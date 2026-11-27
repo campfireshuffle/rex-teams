@@ -85,7 +85,8 @@ local function server(name, blocks, list_dir)
 end
 
 -- The caller's terminal sits in SRC, like Rex's list_dir resolving a path.
--- As in Rex, a file anywhere on the path makes it not_dir.
+-- As in Rex, a file anywhere on the path makes it not_dir, and every answer
+-- has entries.
 local function local_dir(block, args)
   assert(block == "block:me-0000-aaaa", "list_dir must ask the caller's terminal")
   local path = args.path
@@ -106,17 +107,17 @@ local function local_dir(block, args)
   end
   local up = p
   while up ~= "" do
-    if os.execute("test -d " .. quote(up)) == 0 then return { status = "missing", path = p } end
-    if exists(up) then return { status = "not_dir", path = p } end
+    if os.execute("test -d " .. quote(up)) == 0 then return { status = "missing", path = p, entries = {} } end
+    if exists(up) then return { status = "not_dir", path = p, entries = {} } end
     up = up:match("^(.*)/[^/]*$")
   end
-  return { status = "missing", path = p }
+  return { status = "missing", path = p, entries = {} }
 end
 
 local function remote_dir(block, args)
   local path = args.path
   assert(path == "/tmp/rex-teams" and block == "block:far-0000-cccc", path)
-  return { status = remote_root, path = path }
+  return { status = remote_root, path = path, entries = {} }
 end
 
 local function reset()

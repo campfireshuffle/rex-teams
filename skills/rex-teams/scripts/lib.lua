@@ -124,7 +124,7 @@ function lib.locate(session, block, paths)
       local up = lib.call("block.method", { session_id = session, block_id = block, method = "list_dir",
         args = { path = parent == "" and "/" or parent:match("^%a:$") and parent .. "\\" or parent, files = true, prefix = name } })
       local status = up.status == "not_dir" and "missing" or up.status
-      for _, entry in ipairs(up.entries or {}) do
+      for _, entry in ipairs(up.entries) do
         if entry.name == name then status = "found" end
       end
       if status ~= "found" then error("file " .. path .. ": " .. (status == "ok" and "missing" or status), 0) end
