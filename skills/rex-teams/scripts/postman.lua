@@ -28,24 +28,25 @@ function M.last_tick(msg, now)
   return k
 end
 
--- Notices, and messages you sent yourself, never cause notices.
-local function notice(msg, text)
-  local self = msg.to.host == nil and msg.to.block == msg.from.block
-  if not (msg.notice or self) then return text end
+-- Notices, and messages you sent yourself, never cause notices. A notice's
+-- receiver has no name, so its text is built only when it's sent.
+local function quiet(msg)
+  return msg.notice or (msg.to.host == nil and msg.to.block == msg.from.block)
 end
 
-local function give_up(msg, why, text)
+local function give_up(msg, why, what)
   msg.dead = why
-  text = notice(msg, text)
-  return text and { kind = "notice", text = text } or { kind = "save" }
+  if quiet(msg) then return { kind = "save" } end
+  return { kind = "notice", text = "Message " .. msg.id .. " to " .. msg.to.name .. " " .. what
+    .. ". It's kept in " .. mail.file(msg.id) .. "." }
 end
 
 -- A paste or Enter that failed, or may not have finished, is never tried
 -- again: its sender hears once, with ERR. A recurring alarm drops this tick
 -- and waits for its next.
 local function lost(msg, err)
-  local text = notice(msg, "Message " .. msg.d.tag .. " to " .. msg.to.name .. " may not have arrived: " .. err
-    .. ". It isn't sent again.")
+  local text = not quiet(msg) and "Message " .. msg.d.tag .. " to " .. msg.to.name .. " may not have arrived: " .. err
+    .. ". It isn't sent again." or nil
   if msg.every then msg.d = nil end
   return { kind = "drop", text = text, err = err, at = msg.due }
 end
@@ -95,13 +96,9 @@ function M.step(msg, check, now)
 
   if not check then return { kind = "check" } end
   if check.gone then
-    return give_up(msg, "gone", "Message " .. msg.id .. " to " .. msg.to.name
-      .. " can't be delivered: that pane is gone. It's kept in " .. mail.file(msg.id) .. ".")
+    return give_up(msg, "gone", "can't be delivered: that pane is gone")
   end
-  if d.attach_error then
-    return give_up(msg, "files", "Message " .. msg.id .. " to " .. msg.to.name .. " wasn't sent: " .. d.attach_error
-      .. ". It's kept in " .. mail.file(msg.id) .. ".")
-  end
+  if d.attach_error then return give_up(msg, "files", "wasn't sent: " .. d.attach_error) end
   if check.error then
     d.why = "Rex can't reach it (" .. check.error .. ")"
     return { kind = "hold", at = now + M.poll }

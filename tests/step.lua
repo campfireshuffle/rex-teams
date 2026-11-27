@@ -8,9 +8,13 @@ local P = real_dofile("skills/rex-teams/scripts/postman.lua")
 local step = P.step
 local mailfile = real_dofile("skills/rex-teams/scripts/mail.lua").file
 
+-- mail.post's from: no name.
+local ME = { session = "s:1", block = "b:me" }
+-- A notice as mail.notice builds it: to is the sender's from.
+local function note() return { notice = true, to = ME, head = "[rex-teams postman", tail = "] " } end
 local function msg(o)
   local m = { id = "100-abcd", posted = 100, head = "[from Me", tail = ", who can't see this screen.] ", text = "hi",
-    to = { session = "s:1", block = "b:to", name = "Reviewer" }, from = { session = "s:1", block = "b:me", name = "Me" } }
+    to = { session = "s:1", block = "b:to", name = "Reviewer" }, from = ME }
   for k, v in pairs(o or {}) do m[k] = v end
   return m
 end
@@ -59,7 +63,7 @@ trial("a paste with neither outcome, after a restart, is reported, never pasted 
   assert(a.text:find("may not have arrived: the postman stopped between its paste and its Enter", 1, true), a.text)
 end)
 trial("a failed paste to yourself, or a notice, drops it without a notice", function()
-  for _, m in ipairs({ msg({ notice = true }), msg({ to = { session = "s:1", block = "b:me", name = "Me" } }) }) do
+  for _, m in ipairs({ msg(note()), msg({ to = { session = "s:1", block = "b:me", name = "Me" } }) }) do
     put(m)
     m.d.error = "boom"
     local a = is(step(m, nil, 101), "drop")
@@ -75,7 +79,7 @@ trial("a failed tick of a recurring alarm drops that tick and waits for the next
   is(step(m, nil, 162), "wait", { at = 220 })
 end)
 trial("notices never cause notices", function()
-  local g = msg({ notice = true })
+  local g = msg(note())
   is(step(g, { gone = true }, 100), "save")
   assert(g.dead == "gone")
 end)
