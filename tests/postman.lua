@@ -101,6 +101,16 @@ rex = {
       end
       return { blocks = blocks }
     end
+    if method == "session.view" then
+      -- Each block is a tab of its own, labelled with its name.
+      local windows = {}
+      for id, b in pairs(S.blocks) do
+        if b.session == args.session_id then
+          windows[#windows + 1] = { label = b.name or id, layers = { { blocks = { { block_id = id, label = "shell" } } } } }
+        end
+      end
+      return { windows = windows }
+    end
     if method == "session.new_block" then
       S.new_block = args
       -- Its process takes a moment to start.
@@ -902,6 +912,178 @@ trial("a postman that doesn't run within 5s is an error naming its block", funct
   fails("the postman didn't start within 5s. See why with: rex capture -s s:home -b block:new", function() ensure("hangs") end)
   -- The limit is the time waited, not the number of checks.
   assert(math.abs(S.slept - 5) < 1e-6, "waited " .. S.slept .. " seconds")
+end)
+
+-- Ten end-to-end trials ------------------------------------------------------------
+-- The likeliest real uses, driven through mail.post as send.lua and
+-- alarm.lua call it, the postman's singleton and its 2 s beat.
+
+-- block:me posts O through mail.post. mail.list lists the outbox through
+-- the pane it first ran in, the postman's, so that session is attached.
+local function post(o)
+  local prev = S.env.REX_BLOCK
+  S.env.REX_BLOCK = "block:me"
+  lib.attach("s:home")
+  local ok, id, name = pcall(mail.post, o)
+  S.env.REX_BLOCK = prev
+  assert(ok, id)
+  return id, name
+end
+-- The postman ensure starts, block:new, runs once its process is up.
+local function starts_on_ensure()
+  S.on_sleep = function(i)
+    if i ~= 1 then return end
+    S.blocks["block:new"].pid = 7
+    local prev = S.env.REX_BLOCK
+    S.env.REX_BLOCK = "block:new"
+    P.run()
+    S.env.REX_BLOCK = prev
+  end
+end
+local function people()
+  local r, me = receiver("block:to"), receiver("block:me")
+  S.blocks["block:to"].name, S.blocks["block:me"].name = "Reviewer", "Me"
+  return r, me
+end
+local function reply(block) return "Reply by running: " .. lib.send_command(block, "<reply>") .. "] " end
+
+trial("E1 the first send on a fresh machine starts the postman, which delivers it with its header", function()
+  local r = people()
+  starts_on_ensure()
+  local id, name = post({ to = "block:to", text = "review PR 12" })
+  assert(name == "Reviewer" and S.created == "rex-teams" and S.new_block.label == "rex-teams postman")
+  run_to(S.t + P.poll)
+  assert(texts(r.delivered) == "[from Me · msg " .. id .. ", who can't see this screen. " .. reply("block:me") .. "review PR 12", texts(r.delivered))
+  assert(#queued() == 0 and not S.stopped)
+end)
+trial("E2 later sends find the running postman, start no other, and arrive within a beat", function()
+  local r = people()
+  postman("block:pm")
+  start()
+  for i = 1, 3 do
+    local t = S.t
+    post({ to = "block:to", text = "note " .. i })
+    run_to(S.t + P.poll)
+    assert(#r.delivered == i and r.delivered[i].t - t <= P.poll, "note " .. i)
+    run_to(S.t + 30)
+  end
+  assert(not S.new_block and #S.closed == 0, "another postman started")
+end)
+trial("E3 messages sent in one second to one receiver arrive in the order sent", function()
+  local r = people()
+  postman("block:pm")
+  start()
+  for i = 1, 5 do post({ to = "block:to", text = "part " .. i }) end
+  run_to(S.t + P.poll)
+  assert(texts(r.delivered):gsub("%[[^]]*%] ", "") == "part 1 | part 2 | part 3 | part 4 | part 5", texts(r.delivered))
+end)
+trial("E4 an alarm in 60 s arrives within a beat of its time, headed as yours, and its file goes", function()
+  local _, me = people()
+  postman("block:pm")
+  start()
+  local id = post({ to = "block:me", text = "check CI", at = S.now + 60 })
+  run_to(S.t + 59)
+  assert(#me.puts == 0, "early")
+  run_to(S.t + P.poll + 1)
+  assert(#me.puts == 1 and me.puts[1].text == "[alarm you set · msg " .. id .. "] check CI", texts(me.puts))
+  assert(me.puts[1].t >= 1795671060 and me.puts[1].t < 1795671060 + P.poll, me.puts[1].t)
+  assert(#queued() == 0)
+end)
+trial("E5 an alarm every 10 min ticks on time for an hour, then deleting its file cancels it", function()
+  local _, me = people()
+  postman("block:pm")
+  start()
+  local id = post({ to = "block:me", text = "standup", every = 600 })
+  run_to(S.t + 3601)
+  assert(#me.puts == 6, #me.puts .. " ticks")
+  for k, p in ipairs(me.puts) do
+    local due = 1795671000 + 600 * k
+    assert(p.k == k and p.t >= due and p.t < due + P.poll, ("tick %d at +%.1f"):format(k, p.t - due))
+  end
+  os.remove(mail.file(id))
+  run_to(S.t + 1800)
+  assert(#me.puts == 6 and #queued() == 0)
+end)
+trial("E6 a receiver that closed its pane: one notice with the text, and nothing is left queued", function()
+  local _, me = people()
+  postman("block:pm")
+  start()
+  local id = post({ to = "block:to", text = "are you there?" })
+  S.receivers["block:to"] = nil
+  run_to(S.t + 60)
+  assert(#me.puts == 1 and me.puts[1].text:find("Message " .. id .. " to Reviewer can't be delivered: that pane is gone. It said: are you there?", 1, true), texts(me.puts))
+  assert(#queued() == 0)
+end)
+trial("E7 after a Rex restart the resumed postman delivers what waited, once, past old postman shells", function()
+  local r = people()
+  -- Before the restart, Rex was down with a message queued; old postmen
+  -- that had stopped are shells now, and older.
+  postman("block:a-pm")
+  S.blocks["block:0-old"] = { session = "s:home", label = "rex-teams postman", pid = 5, fg = "fish" }
+  S.blocks["block:1-old"] = { session = "s:home", label = "rex-teams postman", last_exit = { exit_code = 1 } }
+  queue({ text = "while you were out" })
+  S.env.REX_BLOCK = "block:a-pm"
+  start()
+  run_to(S.t + 10)
+  assert(not S.stopped and #r.delivered == 1 and texts(r.delivered):find("while you were out$"), texts(r.delivered))
+  post({ to = "block:to", text = "and now" })
+  run_to(S.t + P.poll)
+  assert(#r.delivered == 2 and not S.new_block, "a send after the restart started another postman")
+end)
+trial("E8 two postmen started at once: the newer quits before reporting, and each message is pasted once", function()
+  local r = people()
+  postman("block:p1")
+  postman("block:p2")
+  S.blocks["block:p1"].pid, S.blocks["block:p2"].pid = 11, 12
+  queue({ text = "once" })
+  S.env.REX_BLOCK = "block:p2"
+  start()
+  assert(S.stopped == 0 and S.closed[1] == "block:p2" and #S.out == 0)
+  S.env.REX_BLOCK = "block:p1"
+  S.stopped = nil
+  P.run()
+  post({ to = "block:to", text = "twice?" })
+  run_to(S.t + 30)
+  assert(texts(r.delivered):gsub("%[[^]]*%] ", "") == "once | twice?", texts(r.delivered))
+  local reports = select(2, table.concat(S.out):gsub("\27%]7577;", ""))
+  assert(reports == 1, reports .. " OSC reports")
+end)
+trial("E9 a postman killed mid-paste: the next one never pastes it again, and the sender hears", function()
+  local r, me = people()
+  postman("block:pm")
+  local id = post({ to = "block:to", text = "deploy" })
+  local file, outbox = mail.file(id), nil
+  fake.put = function(addr, text)
+    local f = assert(real_open(file))
+    outbox = f:read("*a")
+    f:close()
+    return real_fake.put(addr, text)
+  end
+  start()
+  fake.put = real_fake.put
+  lib.write(file, outbox) -- killed there: the file is as it was during the paste
+  start()
+  run_to(S.t + 30)
+  assert(#r.puts == 1, "pasted " .. #r.puts .. " times")
+  assert(#me.puts == 1 and me.puts[1].text:find("Message " .. id .. " to Reviewer may not have arrived: the postman stopped between its paste and its Enter", 1, true), texts(me.puts))
+  assert(#queued() == 0)
+end)
+trial("E10 a receiver Rex can't reach holds only its own queue: the others arrive, and its messages follow in order", function()
+  local r = people()
+  local far = receiver("block:far", { "down" })
+  S.blocks["block:far"].name = "Far"
+  postman("block:pm")
+  start()
+  post({ to = "block:far", text = "far 1" })
+  post({ to = "block:to", text = "near" })
+  post({ to = "block:far", text = "far 2" })
+  run_to(S.t + P.poll)
+  assert(#r.delivered == 1 and #far.puts == 0)
+  run_to(S.t + 300)
+  assert(#far.puts == 0 and #S.receivers["block:me"].puts == 0, "pasted, or the sender was told")
+  far.script = { "up" }
+  run_to(S.t + P.poll)
+  assert(texts(far.delivered):gsub("%[[^]]*%] ", "") == "far 1 | far 2", texts(far.delivered))
 end)
 
 -- The trust rule ----------------------------------------------------------------
