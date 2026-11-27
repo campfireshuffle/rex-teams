@@ -64,7 +64,7 @@ check("ARCHITECTURE names exactly the fields postman.lua writes to postman.json"
 end)
 
 check("every function ARCHITECTURE names for a script is defined in that script", function()
-  -- Round 2's redo renamed step() to deliver(), and the doc kept step.
+  -- Round 2's redo renamed the delivery policy to deliver(), and the doc kept the old name.
   -- Names come from the Components diagram, `postman.lua (deliver, ensure, run)`,
   -- and from each script's row in the File table, `name(` in code spans.
   local named = {}
