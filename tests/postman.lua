@@ -123,9 +123,10 @@ rex = {
       return { foreground = b.pid and { pid = b.pid, name = b.fg or "rex" }, last_exit = b.last_exit }
     end
     if method == "block.method" and args.method == "list_dir" then
-      local entries = {}
-      for _, name in ipairs(ls(args.args.path)) do entries[#entries + 1] = { name = name } end
-      return { status = "ok", entries = entries }
+      -- Like Rex, it lists at most LIMIT entries and says if there were more.
+      local entries, names = {}, ls(args.args.path)
+      for i = 1, math.min(#names, args.args.limit or math.huge) do entries[i] = { name = names[i] } end
+      return { status = "ok", entries = entries, truncated = #entries < #names }
     end
     error("unexpected call " .. method .. " " .. tostring(args.method))
   end,
