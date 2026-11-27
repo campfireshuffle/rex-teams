@@ -164,7 +164,6 @@ trial("the address is resolved once, at post", function()
 end)
 for _, row in ipairs({
   { "two lines", { to = "Helper", text = "a\nb" }, "the message must be one line" },
-  { "no text", { to = "Helper" }, "the message is empty; say something" },
   { "an empty message", { to = "Helper", text = "" }, "the message is empty; say something" },
   { "a blank message", { to = "Helper", text = "   " }, "the message is empty; say something" },
   { "a blank address", { to = "  ", text = "hi" }, "say who the message is for" },

@@ -109,12 +109,12 @@ end
 function mail.post(o)
   local need = lib.need
   local text = o.text
-  need(type(text) == "string" and text:find("%S"), "the message is empty; say something")
+  need(text:find("%S"), "the message is empty; say something")
   -- A newline would submit half the message.
   need(not text:find("[\r\n]"), "the message must be one line; put longer text in a file and attach it with file=")
   local to = o.to
   -- Rex resolves an empty query to some terminal.
-  need(type(to) == "string" and to:match("%S"), "say who the message is for")
+  need(to:match("%S"), "say who the message is for")
   local host = o.host
   local files = type(o.files) == "table" and o.files or { o.files }
   for _, file in ipairs(files) do
@@ -136,7 +136,7 @@ function mail.post(o)
     text = text .. " [files: " .. table.concat(paths, ", ") .. "]"
   end
   local head
-  if (o.at or o.every) and not host and block == from_block then
+  if (o.at or o.every) and block == from_block then
     head = "[alarm you set · msg " .. id .. "] "
   else
     head = lib.header(from_session, from_block, host ~= nil, id)

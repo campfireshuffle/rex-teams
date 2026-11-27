@@ -22,7 +22,7 @@ M.poll = 2 -- seconds between passes
 -- The last tick of a recurring alarm due at NOW, 0 before the first. Tick
 -- k falls at start + k*every.
 local function last_tick(msg, now)
-  local k = math.max(0, math.floor((now - msg.start) / msg.every))
+  local k = math.floor((now - msg.start) / msg.every)
   -- The division can round down: 33 / 1.1 gives 29.999...
   if msg.start + (k + 1) * msg.every <= now then k = k + 1 end
   return k
@@ -194,7 +194,6 @@ function M.run()
   local looked, live = pcall(M.live)
   if looked and live[1] and live[1] < me then return quit("an older postman is running") end
   M.report()
-  lib.mkdir(lib.path("outbox"))
   print("postman: delivering " .. mail.dir())
 
   local said -- the error the last pass stopped on
