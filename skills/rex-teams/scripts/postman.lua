@@ -290,11 +290,6 @@ function M.run()
     return false
   end
 
-  local function tell(msg, text)
-    mail.notice(msg.from, text)
-    load()
-  end
-
   -- Do what step says, until it says to wait.
   local function serve(msg)
     local check
@@ -319,22 +314,19 @@ function M.run()
         mail.remove(msg.id)
         forget(msg.id)
         return
-      elseif a.kind == "drop" then
-        print("postman: " .. msg.id .. " may not have arrived: " .. a.err)
-        if msg.every then save(msg) else mail.remove(msg.id) end
-        if a.text then tell(msg, a.text) end
-        if not msg.every then forget(msg.id) return end
-        if msgs[msg.id] then wake[msg.id] = a.at end
-        return
-      elseif a.kind == "notice" then
-        if save(msg) then tell(msg, a.text) end
+      elseif a.kind == "drop" or a.kind == "notice" then
+        -- The notice goes first: a postman that stops here may tell the
+        -- sender twice, never not at all.
+        if a.err then print("postman: " .. msg.id .. " may not have arrived: " .. a.err) end
+        if a.text then mail.notice(msg.from, a.text) end
+        if a.kind == "drop" and not msg.every then mail.remove(msg.id) else save(msg) end
+        load()
+        if a.kind == "drop" and msgs[msg.id] then wake[msg.id] = a.at end
         return
       else
         if a.kind ~= "wait" and not save(msg) then return end
         wake[msg.id] = a.at or math.huge
-        -- A recurring alarm's next tick may be due already: it goes now.
-        if a.kind ~= "save" or not a.at or a.at > os.time() then return end
-        check = nil
+        return
       end
     end
   end
