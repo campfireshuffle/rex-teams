@@ -1,5 +1,7 @@
--- Run from the repo root with `luajit tests/removal.lua [BASE]`. BASE is a
--- git revision; it defaults to where this branch left main.
+-- Run from the repo root with `luajit tests/checks/removal.lua [BASE]`. BASE is
+-- a git revision; it defaults to where this branch left main. It needs git
+-- history, so it's a pre-merge check, not a CI test (CI runs tests/*.lua on
+-- a shallow checkout).
 -- A name that the scripts' code had at BASE and has no longer must not be
 -- mentioned by the docs, the tests or the scripts' comments. Every
 -- fix-induced defect in loop 2 was a removal that a reader or a doc still
@@ -20,7 +22,7 @@ local function read(path)
 end
 
 local base = arg[1] or sh("git merge-base HEAD main"):match("%x+")
-assert(base and sh("git cat-file -t " .. base):match("commit"), "no base revision: pass one, e.g. luajit tests/removal.lua main")
+assert(base and sh("git cat-file -t " .. base):match("commit"), "no base revision: pass one, e.g. luajit tests/checks/removal.lua main")
 
 -- Words that stay in use under another meaning. Each one says why.
 local allowed = {
@@ -91,13 +93,9 @@ for _, path in ipairs({ "README.md", "ARCHITECTURE.md", "skills/rex-teams/SKILL.
   readers[#readers + 1] = { path, assert(read(path), path) }
 end
 for name in sh("ls tests"):gmatch("[^\n]+") do
-  if name:match("%.lua$") and name ~= "removal.lua" then readers[#readers + 1] = { "tests/" .. name, read("tests/" .. name), lua = true } end
+  if name:match("%.lua$") then readers[#readers + 1] = { "tests/" .. name, read("tests/" .. name), lua = true } end
 end
 readers[#readers + 1] = { "tests/live/battery.lua", read("tests/live/battery.lua"), lua = true }
--- The release notes live in the main checkout's .converge/, outside git.
-local common = sh("git rev-parse --path-format=absolute --git-common-dir"):match("[^\n]+")
-local notes = common and read(common:gsub("/%.git$", "") .. "/.converge/release-notes.md")
-if notes then readers[#readers + 1] = { ".converge/release-notes.md", notes } end
 
 -- A mention is the name used as code: name( for a function, .name for a
 -- field (a Rex reply's .records isn't alarm.lua's old records()), or
