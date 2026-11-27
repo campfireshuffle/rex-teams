@@ -9,7 +9,7 @@ local calls, events, servers
 local function server(name, blocks)
   local s = {}
   function s.call(method, args)
-    calls[#calls + 1] = name .. " " .. method .. (args.method and " " .. args.method or "")
+    calls[#calls + 1] = name .. " " .. method .. " " .. (args.method or args.session_id or "")
     if method == "target.resolve" then
       local b = blocks[args.queries[1]]
       if not b then return { results = { { status = "not_found" } } } end
@@ -35,7 +35,11 @@ local function reset(blocks, remote)
     server = function(label) if not servers[label] or label == "" then error('rex.server: no host named "' .. label .. '"', 0) end return servers[label] end }
 end
 reset({})
+-- Keep pane.lua's own lib, so a trial can watch its file copies.
+local real_dofile, plib = dofile, nil
+dofile = function(path) local m = real_dofile(path) if path:match("lib%.lua$") then plib = m end return m end
 local pane = dofile("skills/rex-teams/scripts/pane.lua")
+dofile = real_dofile
 
 local n, failed = 0, 0
 local function trial(name, f)
@@ -77,6 +81,20 @@ trial("put pastes, and enter presses and releases Enter, in the addressed pane",
   end
   for _, e in ipairs(events) do assert(e.server == "local" and e.session == "s:1" and e.block == "b:1") end
 end)
+trial("a pane whose tab moved to another session after the post gets the message there", function()
+  local blocks = { ["b:1"] = { session = "s:1" } }
+  reset(blocks)
+  local addr = { session = "s:1", block = "b:1" }
+  pane.put(addr, "before")
+  blocks["b:1"].session = "s:2"
+  calls, events = {}, {}
+  pane.put(addr, "after")
+  pane.enter(addr)
+  assert(#events == 3, #events .. " events")
+  for _, e in ipairs(events) do assert(e.session == "s:2", "an event went to " .. e.session) end
+  assert(calls[1] == "local target.resolve " and calls[2] == "local session.attach s:2", "put didn't attach to s:2 first: " .. table.concat(calls, ", "))
+  assert(pane.exists(addr))
+end)
 trial("another host's pane is checked and typed into through rex.server", function()
   reset({}, { ["b:far"] = { session = "s:far" } })
   local addr = { host = "ws", session = "s:far", block = "b:far" }
@@ -85,6 +103,20 @@ trial("another host's pane is checked and typed into through rex.server", functi
   pane.enter(addr)
   for _, c in ipairs(calls) do assert(c:find("^ws "), "a call went to this host: " .. c) end
   for _, e in ipairs(events) do assert(e.server == "ws" and e.block == "b:far") end
+end)
+
+trial("files for a pane whose tab moved go to the session it's in now", function()
+  local far = { ["b:far"] = { session = "s:old" } }
+  reset({}, far)
+  local copies = {}
+  local send_files = plib.send_files
+  plib.send_files = function(host, session, block) copies[#copies + 1] = host .. " " .. session .. " " .. block end
+  local addr = { host = "ws", session = "s:old", block = "b:far" }
+  far["b:far"].session = "s:new"
+  local ok, err = pcall(pane.attach, addr, { "/tmp/x" }, "1-abcd")
+  plib.send_files = send_files
+  assert(ok, tostring(err))
+  assert(copies[1] == "ws s:new b:far", "files went to " .. tostring(copies[1]))
 end)
 
 if failed > 0 then print(failed .. " of " .. n .. " pane trials failed.") os.exit(1) end
