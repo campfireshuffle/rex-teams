@@ -74,5 +74,20 @@ check("ARCHITECTURE doesn't say mail.post checks all its input", function()
   assert(not row:find("bad input", 1, true) and not row:find("everything", 1, true),
     "ARCHITECTURE says mail.post checks all its input")
 end)
+check("README doesn't say the skill needs the screen", function()
+  -- Decision 005: the postman pastes and presses Enter; nothing reads the screen.
+  local needs = assert(read("README.md"):match("Rex already gives agents everything this skill needs: ([^.]*)%."))
+  assert(not needs:find("screen", 1, true), "README says the skill needs the screen: " .. needs)
+end)
+
+check("ARCHITECTURE and mail.post say they start the postman, not wake it", function()
+  -- ensure starts a postman that isn't running; a running one polls on its own.
+  local mail = read("skills/rex-teams/scripts/mail.lua")
+  for name, text in pairs({ ["ARCHITECTURE.md"] = arch, ["mail.lua"] = mail }) do
+    assert(not text:lower():find("wake the postman", 1, true), name .. " says it wakes the postman")
+  end
+  assert(arch:find("start the postman if it isn't running", 1, true), "ARCHITECTURE.md doesn't say mail.post starts the postman")
+  assert(mail:find("Start the postman if it isn't running", 1, true), "mail.lua's post comment doesn't say it starts the postman")
+end)
 if failed > 0 then os.exit(1) end
 print("Passed " .. count .. " doc trials.")

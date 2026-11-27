@@ -98,8 +98,9 @@ local function seq(to, now)
   return n
 end
 
--- Wake the postman, then queue MSG. The postman reads the outbox every few
--- seconds, so it finds MSG; a postman that won't start leaves nothing queued.
+-- Start the postman if it isn't running, then queue MSG. The postman reads
+-- the outbox every few seconds, so it finds MSG; a postman that won't start
+-- leaves nothing queued.
 local function queue(msg)
   dofile(dir .. "postman.lua").ensure()
   lib.mkdir(mail.dir())
