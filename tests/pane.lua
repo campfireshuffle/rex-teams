@@ -5,9 +5,10 @@ local json = dofile("tests/lib/json.lua")
 
 local calls, events, servers
 -- A mock Rex server with BLOCKS, each { session, process? }. A block's
--- process is a live foreground program unless it says otherwise.
+-- process is a live foreground program unless it says otherwise. Like Rex,
+-- it refuses a call on a session this script hasn't attached to.
 local function server(name, blocks)
-  local s = {}
+  local s, attached = {}, {}
   function s.call(method, args)
     calls[#calls + 1] = name .. " " .. method .. " " .. (args.method or args.session_id or "")
     if method == "target.resolve" then
@@ -15,7 +16,10 @@ local function server(name, blocks)
       if not b then return { results = { { status = "not_found" } } } end
       return { results = { { status = "resolved", target = { session_id = b.session, block_id = args.queries[1] } } } }
     end
-    if method == "session.attach" then return {} end
+    if method == "session.attach" then attached[args.session_id] = true return {} end
+    if args.session_id and not attached[args.session_id] then
+      error(method .. ": stream is not attached to " .. args.session_id .. " (status=409 code=conflict)", 0)
+    end
     if method == "block.method" and args.method == "process" then
       return blocks[args.block_id].process or { foreground = { pid = 1, name = "sh" } }
     end
@@ -51,8 +55,8 @@ end
 
 trial("exists: a pane there, or gone, without reading the screen", function()
   reset({ ["b:1"] = { session = "s:1" } })
-  assert(pane.exists({ session = "s:1", block = "b:1" }) == true)
-  assert(pane.exists({ session = "s:1", block = "b:gone" }) == false)
+  assert(pane.exists({ block = "b:1" }) == true)
+  assert(pane.exists({ block = "b:gone" }) == false)
   for _, c in ipairs(calls) do assert(not c:find("format") and not c:find("capture"), c) end
 end)
 trial("exists: a pane whose program exited is gone; a shell whose last command failed isn't", function()
@@ -61,19 +65,19 @@ trial("exists: a pane whose program exited is gone; a shell whose last command f
     ["b:quit"] = { session = "s:1", process = { last_exit = { exit_code = 0 } } },
     ["b:shell"] = { session = "s:1", process = { foreground = { pid = 2, name = "fish" } } },
   })
-  assert(pane.exists({ session = "s:1", block = "b:exited" }) == false)
-  assert(pane.exists({ session = "s:1", block = "b:quit" }) == false, "a program that exited cleanly counts as alive")
-  assert(pane.exists({ session = "s:1", block = "b:shell" }) == true)
+  assert(pane.exists({ block = "b:exited" }) == false)
+  assert(pane.exists({ block = "b:quit" }) == false, "a program that exited cleanly counts as alive")
+  assert(pane.exists({ block = "b:shell" }) == true)
 end)
 trial("exists raises when Rex can't reach the host", function()
   reset({})
-  local ok, err = pcall(pane.exists, { host = "down", session = "s:1", block = "b:1" })
+  local ok, err = pcall(pane.exists, { host = "down", block = "b:1" })
   assert(not ok and tostring(err):find("no host named", 1, true), tostring(err))
 end)
 trial("put pastes, and enter presses and releases Enter, in the addressed pane", function()
   reset({ ["b:1"] = { session = "s:1" } })
-  pane.put({ session = "s:1", block = "b:1" }, "hello")
-  pane.enter({ session = "s:1", block = "b:1" })
+  pane.put({ block = "b:1" }, "hello")
+  pane.enter({ block = "b:1" })
   assert(#events == 3 and events[1].event.type == "paste" and events[1].event.payload.text == "hello")
   for i, action in ipairs({ "press", "release" }) do
     local k = events[i + 1].event.payload
@@ -84,7 +88,7 @@ end)
 trial("a pane whose tab moved to another session after the post gets the message there", function()
   local blocks = { ["b:1"] = { session = "s:1" } }
   reset(blocks)
-  local addr = { session = "s:1", block = "b:1" }
+  local addr = { block = "b:1" }
   pane.put(addr, "before")
   blocks["b:1"].session = "s:2"
   calls, events = {}, {}
@@ -97,7 +101,7 @@ trial("a pane whose tab moved to another session after the post gets the message
 end)
 trial("another host's pane is checked and typed into through rex.server", function()
   reset({}, { ["b:far"] = { session = "s:far" } })
-  local addr = { host = "ws", session = "s:far", block = "b:far" }
+  local addr = { host = "ws", block = "b:far" }
   assert(pane.exists(addr))
   pane.put(addr, "hi")
   pane.enter(addr)
@@ -111,7 +115,7 @@ trial("files for a pane whose tab moved go to the session it's in now", function
   local copies = {}
   local send_files = plib.send_files
   plib.send_files = function(host, session, block) copies[#copies + 1] = host .. " " .. session .. " " .. block end
-  local addr = { host = "ws", session = "s:old", block = "b:far" }
+  local addr = { host = "ws", block = "b:far" }
   far["b:far"].session = "s:new"
   local ok, err = pcall(pane.attach, addr, { "/tmp/x" }, "1-abcd")
   plib.send_files = send_files
