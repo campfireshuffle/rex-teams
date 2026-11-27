@@ -19,11 +19,9 @@ local queued = {}
 for _, msg in ipairs(mail.list()) do
   -- An alarm counts once it's due.
   if msg.to.host == host and not msg.notice and (msg.d or not (msg.at or msg.every)) then
-    local q = queued[msg.to.block] or { n = 0, told = 0, untold = 0 }
+    local q = queued[msg.to.block] or { n = 0, told = 0 }
     queued[msg.to.block] = q
-    -- The postman tells the sender of a dead message, unless it sent it itself.
-    if msg.dead and not msg.to.host and msg.from.block == msg.to.block then q.untold = q.untold + 1
-    elseif msg.dead then q.told = q.told + 1 else
+    if msg.dead then q.told = q.told + 1 else
       q.n = q.n + 1
       q.why = q.why or (msg.d and msg.d.why)
     end
@@ -40,9 +38,6 @@ for _, s in ipairs(sessions) do
     if q and q.told > 0 then
       print("  (" .. q.told .. (q.told == 1 and " message not delivered; its sender was told)"
         or " messages not delivered; their senders were told)"))
-    end
-    if q and q.untold > 0 then
-      print("  (" .. q.untold .. (q.untold == 1 and " message" or " messages") .. " it sent itself not delivered)")
     end
     -- Git runs here, so only this host's checkouts can be read.
     local process = not host and rex.call("block.method", { session_id = s.session_id, block_id = b.id, method = "process", args = {} })
