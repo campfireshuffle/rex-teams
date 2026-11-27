@@ -35,7 +35,7 @@ local function reset()
   S = {
     now = 1795671000, t = 1795671000, env = { REX_BLOCK = "block:pm", OSC7577_TOKEN = TOKEN },
     blocks = { ["block:pm"] = { session = "s:home", pid = 4242 }, ["block:me"] = { session = "s:1" }, ["block:to"] = { session = "s:1" } },
-    timers = {}, out = {}, printed = {}, stopped = nil, closed = {}, receivers = {}, sleeps = 0,
+    timers = {}, out = {}, printed = {}, stopped = nil, closed = {}, receivers = {}, sleeps = 0, slept = 0,
   }
 end
 
@@ -95,8 +95,9 @@ rex = {
     return run_sh(argv, { OSC7577_TOKEN = S.env.OSC7577_TOKEN })
   end,
   after = function(s, f) S.timers[#S.timers + 1] = { due = S.t + s, f = f } end,
-  sleep = function()
+  sleep = function(seconds)
     S.sleeps = S.sleeps + 1
+    S.slept = S.slept + seconds
     if S.on_sleep then S.on_sleep(S.sleeps) end
   end,
   stop = function(code) S.stopped = code end,
@@ -855,7 +856,8 @@ trial("a postman that fails to start is an error naming its block, which stays o
 end)
 trial("a postman that doesn't claim within 5s is an error naming its block", function()
   fails("the postman didn't start within 5s. See why with: rex capture -s s:home -b block:new", function() ensure("hangs") end)
-  assert(S.sleeps == 100, S.sleeps .. " sleeps")
+  -- The limit is the time waited, not the number of checks.
+  assert(math.abs(S.slept - 5) < 1e-6, "waited " .. S.slept .. " seconds")
 end)
 trial("a postman that can't report never claims, so ensure raises", function()
   S.env.OSC7577_TOKEN = false

@@ -1,15 +1,12 @@
--- The postman delivers queued messages, one postman per Rex host. mail.lua
--- writes each message to /tmp/rex-teams/outbox/<id>.json and starts the
--- postman if none runs, in a block labelled "rex-teams postman". Every 2 s
--- the postman reads the outbox again and delivers what's due, oldest first
--- per receiver; deleting a file cancels its message. Each file also holds
--- its message's delivery state, msg.d. postman.json names the postman that
--- runs. It tells Rex its command with OSC 7577, so Rex can start it again.
+-- One postman per Rex host delivers the queued messages in
+-- /tmp/rex-teams/outbox/<id>.json, each of which also holds its delivery
+-- state (msg.d). Every 2 s it reads the outbox and delivers what's due,
+-- oldest first per receiver; deleting a file cancels it. postman.json names
+-- the running postman, and OSC 7577 lets Rex start it again after a restart.
 --
--- The save rule: deliver saves a message before each Rex call that acts on
--- its receiver, and writes its sender's notice before it removes the
--- message or marks it dead. Whatever raises leaves the file as it was, and
--- the next pass reads it again.
+-- The save rule: save a message before each Rex call that acts on its
+-- receiver, and write the sender's notice before removing the message or
+-- marking it dead. Whatever raises leaves the file as it was on disk.
 local dir = debug.getinfo(1, "S").source:gsub("^@", ""):match("^(.*[/\\])")
 local lib = dofile(dir .. "lib.lua")
 local mail = dofile(dir .. "mail.lua")
