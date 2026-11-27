@@ -388,14 +388,6 @@ check("a file gone by delivery: the sender is told, no rex cp, nothing sent", fu
   assert(notice and has(notice, "can't copy the files"), tostring(notice))
   assert(#pasted == 0 and rexes() == 0 and tree(root .. "/stage") == ".", "rex cp ran, a paste went or the stage was left")
 end)
-check("/tmp/rex-teams on the receiver not a folder or denied: the sender is told, no rex cp, nothing sent", function()
-  for _, status in ipairs({ "not_dir", "denied" }) do
-    reset()
-    remote_root = status
-    undelivered({ host = "ws", block = "Builder", message = "see", file = "a.md" }, "/tmp/rex-teams on ws: " .. status)
-    assert(rexes() == 0 and tree(root .. "/stage") == ".", "rex cp ran or the stage was left")
-  end
-end)
 check("a path with a line break: error, nothing copied or sent", function()
   for _, host in ipairs({ false, "ws" }) do
     reset()

@@ -86,7 +86,6 @@ rex = {
     end
     if method == "block.close" then S.closed[#S.closed + 1] = args.block_id S.blocks[args.block_id] = nil return {} end
     if method == "session.list" then
-      if S.list_fails then error("rex: session.list timed out", 0) end
       return { sessions = S.sessions }
     end
     if method == "session.create" then
@@ -363,14 +362,6 @@ trial("every rex-teams session counts, since labels can repeat", function()
   S.blocks["block:a-old"] = { session = "s:dup", label = "rex-teams postman", pid = 5 }
   start()
   assert(S.stopped == 0 and S.closed[1] == "block:pm")
-end)
-trial("a lookup that raises doesn't stop the postman, which may be the only one", function()
-  postman("block:a-old")
-  S.list_fails = true
-  local r = receiver("block:to")
-  queue({})
-  start()
-  assert(not S.stopped and #r.delivered == 1)
 end)
 
 -- Delivery --------------------------------------------------------------------

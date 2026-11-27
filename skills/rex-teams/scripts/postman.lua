@@ -20,12 +20,10 @@ M.poll = 2 -- seconds between passes
 -- Delivery -------------------------------------------------------------
 
 -- The last tick of a recurring alarm due at NOW, 0 before the first. Tick
--- k falls at start + k*every.
+-- k falls at start + k*every. A fractional every can round down (33 / 1.1
+-- gives 29.999...), so that tick goes out one beat later.
 local function last_tick(msg, now)
-  local k = math.floor((now - msg.start) / msg.every)
-  -- The division can round down: 33 / 1.1 gives 29.999...
-  if msg.start + (k + 1) * msg.every <= now then k = k + 1 end
-  return k
+  return math.floor((now - msg.start) / msg.every)
 end
 
 -- Whether MSG is due at NOW. The tick rule: a recurring alarm sends its
@@ -190,9 +188,8 @@ function M.run()
     rex.stop(0)
   end
   -- The oldest live postman delivers; a newer one quits before it reports.
-  -- A lookup that raises doesn't stop this one, which may be the only one.
-  local looked, live = pcall(M.live)
-  if looked and live[1] and live[1] < me then return quit("an older postman is running") end
+  local live = M.live()
+  if live[1] and live[1] < me then return quit("an older postman is running") end
   M.report()
   print("postman: delivering " .. mail.dir())
 

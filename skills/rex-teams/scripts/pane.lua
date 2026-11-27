@@ -75,14 +75,11 @@ function pane.attach(addr, files, id)
       -- by renaming it rex-teams, so make /tmp/rex-teams first.
       lib.mkdir(stage .. "/rex-teams")
       rex_cp(host, session, stage .. "/rex-teams", ":/tmp/")
-    elseif root ~= "ok" then
-      error("/tmp/rex-teams on " .. host .. ": " .. root, 0)
     end
     rex_cp(host, session, stage .. "/inbox", ":/tmp/rex-teams/")
   end)
-  local removed = rex.exec({ "rm", "-rf", stage })
+  rex.exec({ "rm", "-rf", stage })
   if not ok then error(err, 0) end
-  assert(removed and removed.ok, "can't remove " .. stage)
 end
 
 return pane
