@@ -65,7 +65,7 @@ If the child is still open, send it another task with the printed `send.lua` com
 
 Use the `message it:` command, not the `tab:` ID. A window ID can't receive messages. A subagent's tab name isn't a `block=` label either; use the block ID that spawn prints. Lost it? Run `team.lua`.
 
-If you closed it, find the saved conversation that starts with its kickoff, `You are a subagent. Don't rename the Rex session or your tab. Read <task folder>/prompt.md and follow it.`, and work out that CLI's resume command. Write the follow-up to a new task file, then use spawn again:
+If you closed it, find the saved conversation that starts with its kickoff, `You are a subagent. Read <task folder>/prompt.md and follow it.`, and work out that CLI's resume command. Write the follow-up to a new task file, then use spawn again:
 
 ```sh
 rex do <skill>/scripts/spawn.lua name=<short-name> cwd=<dir> task=<follow-up file> command="<resume command>"
@@ -88,6 +88,8 @@ rex do <skill>/scripts/team.lua
 A tab with one pane goes by its tab label. In a split tab, each pane goes by its own label.
 
 To reply to a message, run the command in its header.
+
+Don't rename the Rex session or your tab, even when Rex asks you to name your session. They belong to the user, and tab labels are how agents find each other.
 
 `send.lua` prints `queued message <id> for <name>` and returns; don't wait or check. The postman types it in at once, busy receiver or not, and its CLI decides when to act on it. The postman waits only while Rex can't reach the receiver's host, or for an alarm's time. While another host is unreachable, every delivery from this host can be delayed about 10 s. If the receiver's pane is gone, or the paste or Enter failed, you get one message from `rex-teams postman` saying why; a failed message isn't sent again.
 

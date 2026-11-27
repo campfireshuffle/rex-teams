@@ -136,7 +136,7 @@ trial("the postman is woken, then the message is queued as one file, atomically"
   local msg = only()
   assert(msg.id == id and msg.text == "hi" and msg.to.block == "block:peer" and msg.to.session == "s:me" and msg.to.name == "Helper")
   assert(msg.from.block == "block:me" and msg.to.host == nil)
-  assert(msg.head == "[from Chief" and msg.tail:find("^, who can't see this screen%. Don't rename the Rex session or your tab%. Reply by running: rex do "), msg.tail)
+  assert(msg.head == "[from Chief" and msg.tail:find("^, who can't see this screen%. Reply by running: rex do "), msg.tail)
   assert(msg.tail:find("block='block:me' message='<reply>'] $"), msg.tail)
   assert(renames == 1 and ensured == 1 and queued_at_ensure == 0, "queued before the postman was woken")
 end)

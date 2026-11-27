@@ -13,11 +13,6 @@ lib.windows = package.config:sub(1, 1) == "\\"
 lib.sep = lib.windows and "\\" or "/"
 lib.dir = debug.getinfo(1, "S").source:gsub("^@", ""):match("^(.*[/\\])")
 
--- Rex tells every agent to name its session when its first task arrives.
--- The session and its tabs belong to the user, and tab labels are how agents
--- find each other, so every kickoff and message says this.
-lib.rule = "Don't rename the Rex session or your tab."
-
 -- Agent sandboxes usually let programs write to /tmp.
 lib.root = (lib.windows and assert(os.getenv("TEMP"), "TEMP isn't set, so rex-teams has no folder for its files")
   or "/tmp") .. lib.sep .. "rex-teams"
@@ -227,14 +222,14 @@ function lib.header(from_session, from_block, cross)
     if block.id == from_block then from = lib.name(block) end
   end
   if not cross then
-    return "[from " .. from, ", who can't see this screen. " .. lib.rule
+    return "[from " .. from, ", who can't see this screen."
       .. " Reply by running: " .. lib.send_command(from_block, "<reply>") .. "] "
   end
   local r = rex.exec({ "hostname" })
   local name = r and r.ok and r.stdout:match("^%s*(.-)%s*$") or ""
   assert(name ~= "", "can't read this machine's hostname")
   local id = assert(lib.call("server.status", {}).host_id, "Rex didn't report this host's host_id")
-  return "[from " .. from .. " on " .. name .. " (Rex host " .. id .. ")", ", who can't see this screen. " .. lib.rule
+  return "[from " .. from .. " on " .. name .. " (Rex host " .. id .. ")", ", who can't see this screen."
     .. " To reply, run this with your rex-teams skill's path and your rex hosts label for that host filled in: "
     .. lib.send_command(from_block, "<reply>", "<label>", "<rex-teams skill>/scripts/send.lua") .. "] "
 end

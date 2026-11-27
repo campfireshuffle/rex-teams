@@ -167,7 +167,7 @@ check("a local send by full ID, short ID or label, with no session= anywhere", f
     deliver()
     local p = assert(pasted[1])
     assert(p.server == "local" and p.block == "block:peer-00000-bbbbbb" and p.session == "session:me")
-    assert(has(p.text, "[from Chief · msg ") and has(p.text, ", who can't see this screen. Don't rename the Rex session or your tab. Reply by running: rex do "), p.text)
+    assert(has(p.text, "[from Chief · msg ") and has(p.text, ", who can't see this screen. Reply by running: rex do "), p.text)
     assert(has(p.text, "block='block:me-000000-aaaaaa' message='<reply>'] hi"), p.text)
     assert(not has(p.text, "session=") and not has(p.text, "host="), p.text)
     none_on("ws")
@@ -214,8 +214,7 @@ check("a cross-host header names this host and asks for the receiver's label", f
   assert(run("send.lua", { host = "ws", block = "cccccc", message = "hi" }))
   local msg = deliver()
   local text = assert(pasted[1]).text
-  local want = "[from Chief on mac-host (Rex host id-mac) · msg " .. msg.id .. ", who can't see this screen. Don't rename the Rex session or your tab."
-    .. " To reply, run this with your rex-teams skill's path and your rex hosts label for that host filled in:"
+  local want = "[from Chief on mac-host (Rex host id-mac) · msg " .. msg.id .. ", who can't see this screen. To reply, run this with your rex-teams skill's path and your rex hosts label for that host filled in:"
     .. " rex do <rex-teams skill>/scripts/send.lua host='<label>' block='block:me-000000-aaaaaa' message='<reply>'] hi"
   assert(text == want, text)
 end)

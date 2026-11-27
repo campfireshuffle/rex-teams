@@ -8,7 +8,7 @@
 --
 -- It queues the message and returns; the postman types it in as it arrives,
 -- and tells you if it can't. The message arrives as
---   [from <your name> · msg <id>, who can't see this screen. <rule> Reply by running: <command>] MESSAGE
+--   [from <your name> · msg <id>, who can't see this screen. Reply by running: <command>] MESSAGE
 -- so the other agent knows who wrote and how to answer, even if it has never
 -- heard of this skill. Without "can't see this screen", agents tend to answer
 -- in their own pane, where nobody reads it. Across hosts, the header names

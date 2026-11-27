@@ -43,7 +43,7 @@ local close_file = lib.path("tasks", task_id, "close.md")
 lib.mkdir(task_dir)
 lib.mkdir(lib.path("depth"))
 
-local kickoff = "You are a subagent. " .. lib.rule .. " Read " .. prompt .. " and follow it."
+local kickoff = "You are a subagent. Read " .. prompt .. " and follow it."
 local argv, placed = {}, false
 for word in tostring(a.command):gmatch("%S+") do
   if word == "{prompt}" then word, placed = kickoff, true end
