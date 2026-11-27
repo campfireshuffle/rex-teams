@@ -186,11 +186,7 @@ function M.ensure()
     if s and s.block == block then break end
     if s and s.block ~= block and M.alive(s) then return end
     local p = lib.call("block.method", { session_id = session, block_id = block, method = "process", args = {} })
-    if p.last_exit then
-      local screen = lib.call("block.method", { session_id = session, block_id = block, method = "format", args = { format = "text", trim = true } })
-      lib.call("block.close", { session_id = session, block_id = block })
-      error("the postman didn't start: " .. (screen.content:gsub("%s+$", ""):match("([^\n]*)$") or ""), 0)
-    end
+    if p.last_exit then error("the postman didn't start. See why with: rex capture -b " .. block, 0) end
     rex.sleep(0.05)
   end
   local s = read_state()

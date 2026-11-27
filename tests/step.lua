@@ -1,6 +1,6 @@
 -- Run from the repo root with `luajit tests/step.lua` or `lua5.1 tests/step.lua`.
--- postman.step is the delivery policy: one message, what its receiver's pane
--- shows, and the time in, one action out. No Rex calls are made.
+-- postman.step is the delivery policy: one message, whether its receiver's
+-- pane can be reached, and the time in, one action out. No Rex calls are made.
 local json = dofile("tests/lib/json.lua")
 rex = { json = json, args = {} }
 local real_dofile = dofile
