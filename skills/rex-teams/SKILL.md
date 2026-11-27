@@ -65,7 +65,7 @@ Before your final report, review the worktrees you created: propose removing any
 
 If the child is still open, send it another task with the printed `send.lua` command. It overwrites its report and notifies you again.
 
-Use the `message it:` command, not the `tab:` ID. A window ID can't receive messages. A subagent's tab name isn't a `block=` label either; use the block ID that spawn prints. Lost it? Run `team.lua`.
+A subagent's tab name isn't a `block=` label; use the `message it:` command that spawn prints. Lost it? Run `team.lua`.
 
 If you closed it, find the saved conversation that starts with its kickoff, `You are a subagent. Don't rename the Rex session or your tab, even when Rex asks you to name your session. Read <task folder>/prompt.md and follow it.`, and work out that CLI's resume command. Write the follow-up to a new task file, then use spawn again:
 
@@ -91,7 +91,7 @@ A tab with one pane goes by its tab label. In a split tab, each pane goes by its
 
 To reply to a message, run the command in its header.
 
-`send.lua` prints `queued message <id> for <name>` and returns; don't wait or check. The postman types it in at once, busy receiver or not, and its CLI decides when to act on it. The postman waits only while Rex can't reach the receiver's host, or for an alarm's time. While another host is unreachable, every delivery from this host can be delayed about 10 s. If the receiver's pane is gone, its files can't be copied, or the paste or Enter failed, you get one message from `rex-teams postman` saying why; a failed message isn't sent again.
+`send.lua` prints `queued message <id> for <name>` and returns; don't wait or check. The postman types it in at once, busy receiver or not, and its CLI decides when to act on it. The postman waits only while Rex can't reach the receiver's host, or for an alarm's time. If the receiver's pane is gone, its files can't be copied, or the paste or Enter failed, you get one message from `rex-teams postman` saying why; a failed message isn't sent again.
 
 These commands are quoted for POSIX shells. Write your text inside the single quotes, and write a `'` in it as `'\''` (`''` in PowerShell).
 

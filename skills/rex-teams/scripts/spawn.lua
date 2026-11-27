@@ -114,7 +114,6 @@ end
 
 print("task: " .. task_id)
 print("folder: " .. task_dir)
-print("tab: " .. window)
 if worktree then
   print("branch: " .. worktree.branch)
   print("worktree: " .. worktree.path)

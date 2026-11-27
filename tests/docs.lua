@@ -37,12 +37,10 @@ check("SKILL.md mentions -s only if one of its commands uses it", function()
   error("SKILL.md describes -s, but none of its commands uses it")
 end)
 
-check("SKILL.md and ARCHITECTURE Deliver say an unreachable host delays every delivery about 10 s per check", function()
+check("ARCHITECTURE Deliver says an unreachable host delays every delivery about 10 s per check", function()
   -- One postman serves every receiver in one loop, and a check of a host
-  -- that's down blocks about 10 s (decision 006: no backoff).
-  local why = skill:match("[^\n]*Rex can't reach the receiver's host[^\n]*")
-  assert(why and why:find("every delivery from this host", 1, true) and why:find("about 10 s", 1, true),
-    "SKILL.md doesn't say an unreachable host delays every delivery about 10 s")
+  -- that's down blocks about 10 s (decision 006: no backoff). SKILL.md
+  -- leaves this out (decision 009).
   assert(deliver:find("every delivery from this host", 1, true) and deliver:find("about 10 s", 1, true),
     "ARCHITECTURE Deliver doesn't say an unreachable host delays every delivery about 10 s")
 end)
