@@ -31,11 +31,6 @@ local seconds = a["in"] or a.every
 need(seconds ~= nil and not (a["in"] and a.every), "use in=SECONDS or every=SECONDS")
 need(type(seconds) == "number" and seconds > 0, (a.every and "every" or "in") .. " must be a positive number of seconds")
 need(a.message ~= nil, "message is required")
--- The postman reports itself to Rex with sha256sum.
-if not lib.windows then
-  local r = rex.exec({ "sh", "-c", "command -v sha256sum" })
-  need(r and r.ok, "alarm.lua needs sha256sum (macOS 15+ or coreutils)")
-end
 local _, me = lib.me()
 local id, name = mail.post({ to = a.block and tostring(a.block) or me, text = tostring(a.message),
   at = a["in"] and os.time() + a["in"], every = a.every })

@@ -12,7 +12,7 @@ local root = tmp .. "/rex-teams"
 local S
 local function reset()
   os.execute("rm -rf " .. quote(tmp))
-  S = { now = 1795671000, calls = {}, printed = {}, sha256sum = true, ensured = {} }
+  S = { now = 1795671000, calls = {}, printed = {}, ensured = {} }
 end
 os.time = function(t) if t then return real_time(t) end return S.now end
 os.getenv = function(k) if k == "REX_BLOCK" then return "block:agent" end return real_getenv(k) end
@@ -44,7 +44,6 @@ rex = {
     error("unexpected call " .. method)
   end,
   exec = function(argv)
-    if argv[3] == "command -v sha256sum" then return { ok = S.sha256sum, code = S.sha256sum and 0 or 1, stdout = "", stderr = "" } end
     if argv[1] == "mkdir" or argv[1] == "cmd" then
       os.execute("mkdir -p " .. quote(argv[#argv]))
       return { ok = true, code = 0, stdout = "", stderr = "" }
@@ -145,17 +144,6 @@ end)
 trial("any positive interval is taken, however short", function()
   set({ every = 0.5, message = "fast" })
   assert(queued()[1].every == 0.5)
-end)
-trial("a missing sha256sum stops the setter before anything exists", function()
-  S.sha256sum = false
-  fails("alarm.lua needs sha256sum (macOS 15+ or coreutils)", function() set({ ["in"] = 5, message = "x" }) end)
-  assert(#S.calls == 0)
-end)
-trial("on Windows the setter needs no POSIX tools", function()
-  lib.windows = true
-  S.sha256sum = false
-  set({ ["in"] = 5, message = "x" })
-  assert(#queued() == 1)
 end)
 trial("list=true shows your alarms and how to cancel each", function()
   set({ ["in"] = 120, message = "Check CI" })
