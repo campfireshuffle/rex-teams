@@ -4,9 +4,9 @@
 -- oldest first per receiver; deleting a file cancels it. postman.json names
 -- the running postman, and OSC 7577 lets Rex start it again after a restart.
 --
--- The save rule: save a message before each Rex call that acts on its
--- receiver, and write the sender's notice before removing the message or
--- marking it dead. Whatever raises leaves the file as it was on disk.
+-- The save rule: save a message before its paste, and write the sender's
+-- notice before removing the message or marking it dead. Whatever raises
+-- leaves the file as it was on disk.
 local dir = debug.getinfo(1, "S").source:gsub("^@", ""):match("^(.*[/\\])")
 local lib = dofile(dir .. "lib.lua")
 local mail = dofile(dir .. "mail.lua")
@@ -96,31 +96,22 @@ function M.deliver(msg, now)
 
   if d.pasted_at then return finish(msg, "the postman stopped between its paste and its Enter") end
 
-  -- The receiver must be there. It's checked again after its files are
-  -- copied, which can take a while.
-  while true do
-    local reached, there = pcall(pane.exists, msg.to)
-    if not reached then
-      -- Held, never given up on. Saved so a copy that's done isn't done
-      -- again.
-      mail.write(msg, true)
-      return now + M.poll
-    end
-    if not there then
-      give_up(msg, "gone", "can't be delivered: that pane is gone")
-      return nil
-    end
-    if not msg.files or d.attached then break end
-    if not mail.write(msg, true) then return nil end
+  local reached, there = pcall(pane.exists, msg.to)
+  if not reached then return now + M.poll end -- held, never given up on
+  if not there then
+    give_up(msg, "gone", "can't be delivered: that pane is gone")
+    return nil
+  end
+  if msg.files then
     local copied, err = pcall(pane.attach, msg.to, msg.files, msg.id)
     if not copied then
       give_up(msg, "files", "wasn't sent: " .. tostring(err))
       return nil
     end
-    d.attached = true
   end
 
-  -- Saved first, so a postman that stops mid-paste never pastes it again.
+  -- Saved first, so a postman that stops mid-paste never pastes it again,
+  -- and a message its sender deleted isn't pasted.
   d.pasted_at = now
   if not mail.write(msg, true) then return nil end
   local text = msg.head .. " · msg " .. d.tag .. msg.tail .. msg.text
