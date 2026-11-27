@@ -176,9 +176,7 @@ end
 -- destination, so the stage holds inbox/<block>/<id>/ and goes to
 -- /tmp/rex-teams/ itself.
 function lib.send_files(host, session, block, files, id)
-  assert(not lib.windows, "file= to another host doesn't work from Windows yet")
   local uuid = block:gsub("^block:", "")
-  local landed, folder = lib.inbox(block, id, files)
   local stage = lib.path("stage", id)
   local ok, err = pcall(function()
     local box = table.concat({ stage, "inbox", uuid, id }, "/")
@@ -204,7 +202,6 @@ function lib.send_files(host, session, block, files, id)
   local removed = rex.exec({ "rm", "-rf", stage })
   if not ok then error(err, 0) end
   assert(removed and removed.ok, "can't remove " .. stage)
-  return landed, folder
 end
 
 -- Single quotes keep every character literal in POSIX shells.
