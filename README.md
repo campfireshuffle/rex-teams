@@ -18,7 +18,7 @@ Messages are queued, and one postman per Rex host delivers them. [ARCHITECTURE.m
 ## Install
 
 ```sh
-npx skills add campfireshuffle/rex-teams
+npx skills add -g campfireshuffle/rex-teams
 ```
 
 Requirements:

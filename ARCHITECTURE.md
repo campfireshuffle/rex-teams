@@ -12,7 +12,7 @@ Three ideas cover it:
 
 ```
 send.lua  alarm.lua  team.lua  spawn.lua        entry points: parse arguments, print results
-    \        |          |
+    \        |
      mail.lua (post, list)                       validate, resolve the address, start the postman if it isn't running, queue
          |
      outbox/<id>.json                            one file per message
@@ -52,27 +52,27 @@ postman ─ outbox check every 2 s
                       └► raises          ─► hold (Rex can't reach it): the rest of that receiver's queue waits, in order
                       └► there           ─► attach files (another host) ─► save pasted_at ─► pane.type
 pane.type went through ─► delete the file (a recurring alarm waits for its next tick)
-pane.type raised       ─► one notice to the sender, with the error; the file is deleted (a recurring alarm: see below), never pasted again
+pane.type raised       ─► one notice to the sender, with the error and the message's text; the file is deleted (a recurring alarm: see below), never pasted again
 a restart finds pasted_at ─► the same notice ("the postman stopped between its paste and its Enter"), deleted (a recurring alarm: see below)
 ```
 
 After a failed paste, a recurring alarm keeps its file and drops only that tick; its next tick goes out as usual.
 
-One postman serves every receiver on this host in one loop. A check of a host that's down takes about 10 s, and a held receiver is checked again every 2 s. So while another host is unreachable, every delivery from this host can be delayed about 10 s per check of it.
+One postman serves every receiver on this host in one loop. A check of a host that's down takes about 10 s, and a held receiver is checked again every 2 s. So while another host is unreachable, each held receiver on it adds about 10 s to every pass, and every delivery from this host waits that long.
 
 An alarm waiting for its next tick, or a one-shot not yet due, doesn't hold up the messages behind it.
 
 **Notice**
 ```
 receiver gone, or files can't be copied ─► one notice with the message's text, and the file is deleted
-paste or Enter failed, or may not have finished ─► one notice, and the message (or a recurring alarm's tick) is dropped
+paste or Enter failed, or may not have finished ─► one notice with the message's text, and the message (or a recurring alarm's tick) is dropped
 notices, and messages you sent yourself, never cause notices
 ```
 
 **Alarm**
 ```
 alarm.lua ─► mail.post{at=…} or {every=…} ─► outbox     (in= is any positive number; every= is at least 10)
-postman: the first check at or after the due time (up to 2 s late) ─► deliver as above
+postman: the first check at or after the due time (a few seconds late) ─► deliver as above
 recurring: tick k at start + k·every, never drifting
 a due tick goes out however late; ticks that pile up (a restart, a sleep, an unreachable pane) collapse into the latest one
 ```
