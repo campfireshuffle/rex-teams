@@ -35,7 +35,7 @@ local function reset()
   S = {
     now = 1795671000, t = 1795671000, env = { REX_BLOCK = "block:pm", OSC7577_TOKEN = TOKEN },
     blocks = { ["block:pm"] = { session = "s:home", pid = 4242 }, ["block:me"] = { session = "s:1" }, ["block:to"] = { session = "s:1" } },
-    timers = {}, out = {}, printed = {}, stopped = nil, closed = {}, receivers = {}, sleeps = 0, slept = 0,
+    timers = {}, out = {}, printed = {}, stopped = nil, closed = {}, receivers = {}, sleeps = 0, slept = 0, attached = {},
   }
 end
 
@@ -54,12 +54,16 @@ end
 rex = {
   args = {}, json = json,
   call = function(method, args)
+    -- As in Rex, a script acts on a session only once it has attached to it.
+    if method == "session.attach" then S.attached[args.session_id] = true return {} end
+    if args.session_id and not S.attached[args.session_id] then
+      error("stream is not attached to session " .. args.session_id .. " (status=409 code=conflict)", 0)
+    end
     if method == "target.resolve" then
       local b = S.blocks[args.queries[1]]
       if not b then return { results = { { status = "not_found" } } } end
       return { results = { { status = "resolved", target = { session_id = b.session, block_id = args.queries[1] } } } }
     end
-    if method == "session.attach" then return {} end
     if method == "block.close" then S.closed[#S.closed + 1] = args.block_id S.blocks[args.block_id] = nil return {} end
     if method == "session.list" then return { sessions = S.sessions or {} } end
     if method == "session.create" then S.created = args.label return { session_id = "s:home" } end
@@ -166,9 +170,10 @@ local function run_to(t)
   S.t = math.max(S.t, t)
   S.now = math.floor(S.t)
 end
--- Start the postman; a restart first drops the old one's timers.
+-- Start the postman; a restart is a new process, so it drops the old one's
+-- timers and attachments.
 local function start()
-  S.timers = {}
+  S.timers, S.attached = {}, {}
   P.run()
 end
 -- A message as mail.post queues it. Its from has no name.
@@ -487,6 +492,8 @@ trial("nothing tells you about your own messages, and notices cause no notices",
     if addr.block == "block:me" then error("rex: block.event timed out", 0) end
   end
   queue({ id = "1795671000-self", to = "block:me", name = "Me" })
+  -- mail.notice lists the outbox through the postman's own pane.
+  lib.attach("s:home")
   mail.notice({ session = "s:1", block = "block:me" }, "x")
   mail.notice({ session = "s:1", block = "block:gone" }, "y")
   start()
