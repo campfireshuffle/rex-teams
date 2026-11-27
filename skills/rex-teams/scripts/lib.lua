@@ -113,22 +113,18 @@ function lib.name(session, block, host)
 end
 
 -- The absolute paths of PATHS, read the way a program in BLOCK's terminal
--- would, so relative paths and ~ work. Each must exist.
+-- would, so relative paths and ~ work. Each must exist. BLOCK is on this
+-- host, so Lua can open the absolute path.
 function lib.locate(session, block, paths)
   local found = {}
   for _, path in ipairs(paths) do
     local dir = lib.call("block.method", { session_id = session, block_id = block, method = "list_dir", args = { path = path, limit = 1 } })
-    -- not_dir is a file, or a path through one, such as a.md/x, so look
-    -- for the name in its parent.
+    -- not_dir is a file, or a path through one, such as a.md/x, which
+    -- won't open.
     if dir.status == "not_dir" then
-      local parent, name = dir.path:match("^(.*)[/\\]([^/\\]+)$")
-      local up = lib.call("block.method", { session_id = session, block_id = block, method = "list_dir",
-        args = { path = parent == "" and "/" or parent:match("^%a:$") and parent .. "\\" or parent, files = true, prefix = name } })
-      local status = up.status == "not_dir" and "missing" or up.status
-      for _, entry in ipairs(up.entries) do
-        if entry.name == name then status = "found" end
-      end
-      if status ~= "found" then error("file " .. path .. ": " .. (status == "ok" and "missing" or status), 0) end
+      local file = io.open(dir.path)
+      if not file then error("file " .. path .. ": missing", 0) end
+      file:close()
     elseif dir.status ~= "ok" then
       error("file " .. path .. ": " .. dir.status, 0)
     end
