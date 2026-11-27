@@ -1,7 +1,7 @@
 -- Run from the repo root with `luajit tests/hosts.lua` or `lua5.1 tests/hosts.lua`.
 -- Mocks rex.call, rex.server, target.resolve and `hostname` to check
 -- send.lua and team.lua on this host and on another one. send.lua queues a
--- message; deliver() then hands it to the postman's policy and pane.lua, as
+-- message; deliver() then hands it to the postman's deliver and pane.lua, as
 -- the postman would, to see where it lands.
 local real_dofile = dofile
 local json = real_dofile("tests/lib/json.lua")
@@ -116,17 +116,13 @@ end
 local function deliver()
   load()
   local P = real_dofile("skills/rex-teams/scripts/postman.lua")
-  local pane = real_dofile(lib.dir .. "pane.lua")
   local p = io.popen("ls '" .. tmp .. "/outbox'")
   local name = assert(p:read("*l"), "nothing was queued")
   p:close()
   local f = assert(io.open(tmp .. "/outbox/" .. name))
   local msg = json.decode(f:read("*a"))
   f:close()
-  local a = P.step(msg, {}, os.time())
-  assert(a.kind == "put", a.kind)
-  pane.put(msg.to, a.text)
-  pane.enter(msg.to)
+  P.deliver(msg, os.time())
   dofile = real_dofile
   return msg
 end

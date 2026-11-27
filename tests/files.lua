@@ -2,7 +2,7 @@
 -- send.lua file=: mocks rex.call and the `rex` command, and runs mkdir, cp
 -- and rm for real in a scratch folder, so the stage can be checked on disk.
 -- send.lua checks the files and queues the message; deliver() then runs the
--- postman's policy and pane.lua, which copy them to another host at delivery.
+-- postman's deliver and pane.lua, which copy them to another host at delivery.
 local real_dofile, real_getenv = dofile, os.getenv
 local json = real_dofile("tests/lib/json.lua")
 local function quote(s) return "'" .. s:gsub("'", "'\\''") .. "'" end
@@ -69,6 +69,7 @@ local function server(name, blocks, list_dir)
       end
       return { results = { { status = "not_found", reason = "" } } }
     end
+    if method == "block.method" and args.method == "process" then return { foreground = { pid = 1 } } end
     if method == "block.method" then
       assert(args.method == "list_dir")
       return list_dir(args.block_id, args.args)
@@ -181,30 +182,22 @@ end
 local function deliver()
   load()
   local P = real_dofile("skills/rex-teams/scripts/postman.lua")
-  local pane = real_dofile(lib.dir .. "pane.lua")
   local p = io.popen("ls " .. quote(root .. "/outbox"))
   local name = assert(p:read("*l"), "nothing was queued")
   p:close()
   local f = assert(io.open(root .. "/outbox/" .. name))
   local msg = json.decode(f:read("*a"))
   f:close()
-  local idle = {}
-  for _ = 1, 3 do
-    local a = P.step(msg, idle, os.time())
-    if a.kind == "attach" then
-      local ok, err = pcall(pane.attach, msg.to, msg.files, msg.id)
-      if ok then msg.d.attached = true else msg.d.attach_error = tostring(err) end
-    elseif a.kind == "put" then
-      pane.put(msg.to, a.text)
-      pane.enter(msg.to)
-      break
-    else
-      dofile = real_dofile
-      assert(a.kind == "notice", a.kind)
-      return a.text
-    end
-  end
+  P.deliver(msg, os.time())
   dofile = real_dofile
+  p = io.popen("ls " .. quote(root .. "/outbox"))
+  for file in p:lines() do
+    f = assert(io.open(root .. "/outbox/" .. file))
+    local m = json.decode(f:read("*a"))
+    f:close()
+    if m.notice then p:close() return m.text end
+  end
+  p:close()
 end
 
 local count, failed = 0, 0
