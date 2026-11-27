@@ -29,7 +29,7 @@ send.lua  alarm.lua  team.lua  spawn.lua        entry points: parse arguments, p
 | `team.lua` | Lists agents with ready `send.lua` commands, and the branch and worktree of each agent in a linked worktree. |
 | `spawn.lua` | Starts a subagent. Its report is a `send.lua` command, so it's an ordinary message. |
 | `mail.lua` | `mail.post{to, host?, text, files?, at?, every?} -> id, name` and `mail.list() -> messages`. Post checks the text, the receiver and the files, and raises before queueing, in a plain sentence; `send.lua` and `alarm.lua` check their own arguments. List raises, naming the file, on one that isn't JSON. |
-| `postman.lua` | `deliver(msg, now) -> next wake`, which takes one message as far as it can go (Rex calls, outbox writes, notices) and returns when to try it again, or nil once it's over; `ensure()`, which starts the postman or raises; and the worker loop. |
+| `postman.lua` | `deliver(msg, now) -> held`, which takes one message as far as it can go (Rex calls, outbox writes, notices) and returns true if it's due but held, so the rest of its receiver's queue waits; `ensure()`, which starts the postman or raises; and the worker loop. |
 | `pane.lua` | `exists(addr)`, `type(addr, text)` (paste, then Enter), `attach(addr, files, id)` (file copies across hosts). |
 | `lib.lua` | Addresses, headers, quoting, `need` for plain refusals. |
 
@@ -46,7 +46,7 @@ agent ◄─ "queued message <id> for <name>"
 
 **Deliver**
 ```
-postman ─ outbox check (every 2 s) or a timer
+postman ─ outbox check every 2 s
         ─ each receiver's due messages, in posted order (posted, then seq)
         ─ pane.exists ─► gone            ─► one notice to the sender; the file is kept, marked dead
                       └► raises          ─► hold (Rex can't reach it): the rest of that receiver's queue waits, in order
@@ -72,7 +72,7 @@ notices, and messages you sent yourself, never cause notices
 **Alarm**
 ```
 alarm.lua ─► mail.post{at=…} or {every=…} ─► outbox     (in= is any positive number; every= is at least 10)
-postman: timer to the due time ─► deliver as above
+postman: the first check at or after the due time (up to 2 s late) ─► deliver as above
 recurring: tick k at start + k·every, never drifting
 a due tick goes out however late; ticks that pile up (a restart, a sleep, an unreachable pane) collapse into the latest one
 ```
@@ -111,7 +111,7 @@ If Rex grows a better API, this table says what to swap.
 | `pane.exists` | `target.resolve` | the same |
 | `pane.type` | `block.event` paste, then key Enter | a native queue (a CLI's or Rex's), or a Rex "unsent input" signal; then #40 and #41 close |
 | `pane.attach` | `rex cp` | the same |
-| postman timers | `rex.after` | the same |
+| postman beat | `rex.after` | the same |
 | postman restart | OSC 7577 report, and the trust rule over the scripts folder that README.md quotes | the same |
 | postman singleton | `session.list`, `session.list_blocks`, `block.method process` for liveness | a Rex singleton or named service |
 | postman home | `session.list`, `session.create`, `session.new_block` (detached) | a Rex background service |

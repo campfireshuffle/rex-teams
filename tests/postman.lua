@@ -637,8 +637,8 @@ trial("after a sleep, the ticks that piled up collapse into one catch-up tick", 
   run_to(1795671661)
   assert(#me.puts == 2 and me.puts[2].t == 1795671660 and me.puts[2].text:find("abcd.11]", 1, true))
 end)
-trial("fractional and short recurring alarms fire on their phase, never early or twice", function()
-  for _, every in ipairs({ 0.5, 1.1, 2.5, 3.3, 10.5 }) do
+trial("fractional recurring alarms fire on their phase, at most a beat late, never early, twice or skipped", function()
+  for _, every in ipairs({ 10, 10.5, 13.3 }) do
     reset()
     local me = receiver("block:me")
     S.t, S.now = 1795671000.7, 1795671000
@@ -654,10 +654,10 @@ trial("fractional and short recurring alarms fire on their phase, never early or
     for _, p in ipairs(me.puts) do
       local tick = tonumber(p.text:match("%.(%d+)%]"))
       local due = 1795671000 + tick * every
-      assert(p.t >= due - 1e-9 and p.t < due + 1, ("every=%s tick %d at +%.2f, due +%.2f"):format(every, tick, p.t - 1795671000, due - 1795671000))
+      -- A beat late, plus up to a second for whole-second clocks.
+      assert(p.t >= due - 1e-9 and p.t < due + P.poll + 1, ("every=%s tick %d at +%.2f, due +%.2f"):format(every, tick, p.t - 1795671000, due - 1795671000))
       assert(not last or tick > last, "tick " .. tick .. " twice")
-      -- Below a second, whole-second clocks collapse ticks; above, none is lost.
-      if every >= 1 and last and tick ~= last + 1 then error(("every=%s: ticks %d to %d skipped"):format(every, last + 1, tick - 1), 0) end
+      if last and tick ~= last + 1 then error(("every=%s: ticks %d to %d skipped"):format(every, last + 1, tick - 1), 0) end
       last = tick
     end
   end
@@ -741,7 +741,7 @@ trial("a tick cut short by a stop is reported as that tick, and the tick due by 
   lib.write(file, outbox)
   S.t, S.now = 1795671025, 1795671025
   start()
-  run_to(S.t + 1)
+  run_to(S.t + P.poll)
   assert(texts(me.puts):find("Message 1795671000-abcd.1 to Reviewer may not have arrived: the postman stopped", 1, true), texts(me.puts))
   assert(#r.puts == 2 and r.puts[2].text:find("msg 1795671000-abcd.2,", 1, true), texts(r.puts))
 end)
