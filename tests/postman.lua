@@ -171,7 +171,7 @@ end
 local function queue(o)
   local msg = { id = o.id or "1795671000-abcd", posted = o.posted or S.now, head = o.head or "[from Me", tail = o.tail or ", who…] ",
     text = o.text or "hi", to = { host = o.host, session = "s:1", block = o.to or "block:to", name = "Reviewer" },
-    from = o.from or { session = "s:1", block = "block:me", name = "Me" }, at = o.at, every = o.every, start = o.every and (o.start or S.now),
+    from = o.from or { session = "s:1", block = "block:me" }, at = o.at, every = o.every, start = o.every and (o.start or S.now),
     seq = o.seq or 0, files = o.files, dead = o.dead, d = o.d }
   os.execute("mkdir -p " .. quote(root .. "/outbox"))
   mail.write(msg)
@@ -552,6 +552,45 @@ trial("a receiver that's gone: one notice, and the file is kept", function()
   assert(m and m.dead == "gone")
   run_to(S.t + 100)
   assert(#me.puts == 1)
+end)
+
+-- Notices are built by mail.notice, addressed to mail.post's from, which has no name.
+-- QUIET runs F after the postman starts and fails on any error it logs.
+local function quiet(f)
+  start()
+  print = function(...) S.printed[#S.printed + 1] = table.concat({ ... }, "\t") end
+  local ok, err = pcall(f)
+  print = real_print
+  assert(ok, err)
+  for _, line in ipairs(S.printed) do assert(not line:find("%.lua:%d+:"), line) end
+end
+trial("a notice to a sender that's gone is kept quietly, marked gone", function()
+  quiet(function()
+    mail.notice({ session = "s:1", block = "block:gone" }, "x")
+    run_to(S.t + 5)
+  end)
+  local ids = queued()
+  assert(#ids == 1, #ids .. " queued")
+  local m = read_msg(ids[1]:gsub("%.json$", ""))
+  assert(m.notice and m.dead == "gone", "dead=" .. tostring(m.dead))
+end)
+trial("a notice whose paste fails is dropped quietly, and the next message to its sender goes out", function()
+  local me = receiver("block:me")
+  local put = fake.put
+  fake.put = function(addr, text)
+    if addr.block == "block:me" and text:find("rex-teams postman", 1, true) then error("rex: block.event timed out", 0) end
+    return put(addr, text)
+  end
+  local ok, err = pcall(quiet, function()
+    mail.notice({ session = "s:1", block = "block:me" }, "x")
+    run_to(S.t + 3)
+    queue({ id = "1795671004-efgh", posted = S.now + 1, to = "block:me", from = { session = "s:1", block = "block:other" } })
+    run_to(S.t + 10)
+  end)
+  fake.put = put
+  assert(ok, err)
+  assert(#me.delivered == 1 and me.delivered[1].text:find("1795671004-efgh", 1, true), "the next message didn't go out")
+  for _, id in ipairs(queued()) do assert(not read_msg(id:gsub("%.json$", "")).notice, "the failed notice is still queued") end
 end)
 
 -- Alarms ------------------------------------------------------------------------
