@@ -129,7 +129,7 @@ end
 -- Whether STATE names a postman that is running: its block exists and its
 -- foreground process is the one that claimed it.
 function M.alive(state)
-  if not (state and state.block and state.session and state.pid) then return false end
+  if not (state and state.block and state.pid) then return false end
   local found = lib.call("target.resolve", { queries = { state.block }, kinds = { "block" } }).results[1]
   if found.status ~= "resolved" then return false end
   lib.attach(found.target.session_id)
@@ -168,7 +168,8 @@ function M.rule()
 end
 
 -- Make sure this host's postman is running, starting it if not. Raises if
--- it doesn't start.
+-- it doesn't start. A postman claims postman.json only once it has
+-- reported itself to Rex, so a claim means it started.
 function M.ensure()
   if M.alive(read_state()) then return end
   local session = home()
@@ -186,11 +187,11 @@ function M.ensure()
     if s and s.block == block then break end
     if s and s.block ~= block and M.alive(s) then return end
     local p = lib.call("block.method", { session_id = session, block_id = block, method = "process", args = {} })
-    if p.last_exit then error("the postman didn't start. See why with: rex capture -b " .. block, 0) end
+    if p.last_exit then error("the postman didn't start. See why with: rex capture -s " .. session .. " -b " .. block, 0) end
     rex.sleep(0.05)
   end
   local s = read_state()
-  if not (s and s.block == block) then error("the postman didn't start within 5s. See why with: rex capture -b " .. block, 0) end
+  if not (s and s.block == block) then error("the postman didn't start within 5s. See why with: rex capture -s " .. session .. " -b " .. block, 0) end
 end
 
 -- OSC 7577 -------------------------------------------------------------
@@ -232,11 +233,13 @@ function M.run()
   local me_session, me = lib.me()
   lib.attach(me_session)
   local pid = lib.call("block.method", { session_id = me_session, block_id = me, method = "process", args = {} }).foreground.pid
+  -- Also makes the root folder, which holds the lock.
+  lib.mkdir(lib.path("outbox"))
   local claimed = locked(function()
     local s = read_state()
     if s and s.block ~= me and M.alive(s) then return false end
-    lib.mkdir(lib.path("outbox"))
-    lib.write(state_file .. ".tmp", rex.json.encode({ block = me, session = me_session, pid = pid }))
+    M.report()
+    lib.write(state_file .. ".tmp", rex.json.encode({ block = me, pid = pid }))
     assert(os.rename(state_file .. ".tmp", state_file))
     return true
   end)
@@ -246,7 +249,6 @@ function M.run()
     rex.stop(0)
     return
   end
-  M.report()
   local started = os.time()
   print("postman: delivering " .. mail.dir())
 

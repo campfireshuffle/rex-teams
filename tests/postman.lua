@@ -245,18 +245,50 @@ trial("the postman claims postman.json with its block and pid", function()
   local f = assert(io.open(root .. "/postman.json"))
   local s = json.decode(f:read("*a"))
   f:close()
-  assert(s.block == "block:pm" and s.session == "s:home" and s.pid == 4242)
+  assert(s.block == "block:pm" and s.pid == 4242 and s.session == nil)
   assert(not io.open(root .. "/postman.lock"), "the lock was left")
+end)
+trial("with no rex-teams folder yet, the first postman claims and delivers", function()
+  os.execute("rm -rf " .. quote(root))
+  start()
+  local f = assert(io.open(root .. "/postman.json"), "not claimed")
+  f:close()
+  local r = receiver("block:to")
+  queue({})
+  run_to(S.t + 3)
+  assert(#r.delivered == 1 and #queued() == 0)
+end)
+trial("two postmen starting at once: only one claims", function()
+  S.blocks["block:pm2"] = { session = "s:home", pid = 4343 }
+  local rename, second = os.rename, nil
+  -- The second starts while the first is claiming.
+  os.rename = function(a, b)
+    if not second then
+      second = true
+      S.env.REX_BLOCK = "block:pm2"
+      pcall(P.run)
+      S.env.REX_BLOCK = "block:pm"
+    end
+    return rename(a, b)
+  end
+  local ok, err = pcall(start)
+  os.rename = rename
+  assert(ok, err)
+  local delivering = 0
+  for _, line in ipairs(S.printed) do
+    if line:find("^postman: delivering") then delivering = delivering + 1 end
+  end
+  assert(second and delivering == 1, delivering .. " postmen claimed")
 end)
 trial("a second postman sees the first, closes its own block and stops", function()
   S.blocks["block:first"] = { session = "s:home", pid = 99 }
-  lib.write(root .. "/postman.json", json.encode({ block = "block:first", session = "s:home", pid = 99 }))
+  lib.write(root .. "/postman.json", json.encode({ block = "block:first", pid = 99 }))
   start()
   assert(S.stopped == 0 and S.closed[1] == "block:pm" and #S.out == 0 and #S.timers == 0)
 end)
 trial("a postman.json whose process is gone is taken over", function()
   S.blocks["block:first"] = { session = "s:home", pid = 100 }
-  lib.write(root .. "/postman.json", json.encode({ block = "block:first", session = "s:home", pid = 99 }))
+  lib.write(root .. "/postman.json", json.encode({ block = "block:first", pid = 99 }))
   start()
   assert(not S.stopped and table.concat(S.out):find("^\27%]7577;"))
 end)
@@ -641,7 +673,7 @@ end)
 local function ensure()
   S.process = function(block)
     if block == "block:new" then
-      if S.starts ~= false then lib.write(root .. "/postman.json", json.encode({ block = "block:new", session = "s:home", pid = 7 })) end
+      if S.starts ~= false then lib.write(root .. "/postman.json", json.encode({ block = "block:new", pid = 7 })) end
       return S.starts == false and { last_exit = { exit_code = 1 } } or { foreground = { pid = 7, name = "rex" } }
     end
     local b = S.blocks[block]
@@ -666,13 +698,33 @@ trial("ensure reuses the session labelled rex-teams", function()
 end)
 trial("ensure leaves a running postman alone", function()
   S.blocks["block:first"] = { session = "s:home", pid = 99 }
-  lib.write(root .. "/postman.json", json.encode({ block = "block:first", session = "s:home", pid = 99 }))
+  lib.write(root .. "/postman.json", json.encode({ block = "block:first", pid = 99 }))
   assert(ensure() == nil and not S.new_block)
 end)
 trial("a postman that fails to start is an error naming its block, which stays open", function()
   S.starts = false
-  fails("the postman didn't start. See why with: rex capture -b block:new", ensure)
+  fails("the postman didn't start. See why with: rex capture -s s:home -b block:new", ensure)
   assert(#S.closed == 0, "the failed postman's block was closed")
+end)
+trial("a postman that claims but fails to report: ensure raises", function()
+  S.env.OSC7577_TOKEN = false
+  S.blocks["block:new"] = { session = "s:home", pid = 7 }
+  local ran
+  S.process = function(block)
+    if block == "block:new" and not ran then
+      -- The new block runs the postman, which is still running this once.
+      ran = {}
+      S.env.REX_BLOCK = "block:new"
+      ran = { pcall(P.run) }
+      S.env.REX_BLOCK = "block:pm"
+    elseif block == "block:new" and ran[1] == false then
+      return { last_exit = { exit_code = 1 } }
+    end
+    local b = S.blocks[block]
+    return { foreground = b and b.pid and { pid = b.pid } }
+  end
+  fails("the postman didn't start", P.ensure)
+  assert(ran[1] == false and tostring(ran[2]):find("OSC7577_TOKEN", 1, true), tostring(ran[2]))
 end)
 trial("README quotes the trust rule as postman.lua writes it", function()
   local f = assert(io.open("README.md"))
