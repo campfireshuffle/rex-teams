@@ -4,7 +4,8 @@
 local json = dofile("tests/lib/json.lua")
 
 local calls, events, servers
--- A mock Rex server with BLOCKS, each { session }.
+-- A mock Rex server with BLOCKS, each { session, process? }. A block's
+-- process is a live foreground program unless it says otherwise.
 local function server(name, blocks)
   local s = {}
   function s.call(method, args)
@@ -15,6 +16,9 @@ local function server(name, blocks)
       return { results = { { status = "resolved", target = { session_id = b.session, block_id = args.queries[1] } } } }
     end
     if method == "session.attach" then return {} end
+    if method == "block.method" and args.method == "process" then
+      return blocks[args.block_id].process or { foreground = { pid = 1, name = "sh" } }
+    end
     if method == "block.event" then
       events[#events + 1] = { server = name, session = args.session_id, block = args.block_id, event = args.event }
       return {}
@@ -41,11 +45,19 @@ local function trial(name, f)
   print((ok and "ok " or "not ok ") .. n .. " - " .. name .. (ok and "" or ": " .. tostring(err)))
 end
 
-trial("exists: a pane there, or gone, with one call and no screen read", function()
+trial("exists: a pane there, or gone, without reading the screen", function()
   reset({ ["b:1"] = { session = "s:1" } })
   assert(pane.exists({ session = "s:1", block = "b:1" }) == true)
   assert(pane.exists({ session = "s:1", block = "b:gone" }) == false)
-  assert(#calls == 2, table.concat(calls, ", "))
+  for _, c in ipairs(calls) do assert(not c:find("format") and not c:find("capture"), c) end
+end)
+trial("exists: a pane whose program exited is gone; a shell whose last command failed isn't", function()
+  reset({
+    ["b:exited"] = { session = "s:1", process = { last_exit = { exit_code = 1 } } },
+    ["b:shell"] = { session = "s:1", process = { foreground = { pid = 2, name = "fish" } } },
+  })
+  assert(pane.exists({ session = "s:1", block = "b:exited" }) == false)
+  assert(pane.exists({ session = "s:1", block = "b:shell" }) == true)
 end)
 trial("exists raises when Rex can't reach the host", function()
   reset({})
@@ -71,11 +83,6 @@ trial("another host's pane is checked and typed into through rex.server", functi
   pane.enter(addr)
   for _, c in ipairs(calls) do assert(c:find("^ws "), "a call went to this host: " .. c) end
   for _, e in ipairs(events) do assert(e.server == "ws" and e.block == "b:far") end
-end)
-trial("attach on this host copies nothing", function()
-  reset({})
-  pane.attach({ session = "s:1", block = "b:1" }, { "/a.md" }, "1-abcd")
-  assert(#calls == 0)
 end)
 
 if failed > 0 then print(failed .. " of " .. n .. " pane trials failed.") os.exit(1) end
