@@ -7,10 +7,8 @@
 -- every= is at least 10 seconds; in= is any positive number.
 -- The target defaults to the calling agent. Alarms reach this host only, so
 -- host= is refused. An alarm is a queued message with a time; the postman
--- delivers it as it does every message. A due tick
--- goes out however late; ticks that pile up, while Rex was down or the
--- machine slept, collapse into the latest one, and the schedule never
--- drifts. Cancel one by deleting its file, which it prints.
+-- delivers it as it does every message, by the tick rule in ARCHITECTURE.md
+-- (Alarm). Cancel one by deleting its file, which it prints.
 local dir = debug.getinfo(1, "S").source:gsub("^@", ""):match("^(.*[/\\])")
 local lib = dofile(dir .. "lib.lua")
 local mail = dofile(dir .. "mail.lua")

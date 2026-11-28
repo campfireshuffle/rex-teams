@@ -26,9 +26,8 @@ local function last_tick(msg, now)
   return math.floor((now - msg.start) / msg.every)
 end
 
--- Whether MSG is due at NOW. The tick rule: a recurring alarm sends its
--- last due tick, msg.k, however late, ticks that pile up collapse into the
--- latest due one, and the schedule never drifts.
+-- Whether MSG is due at NOW, by the tick rule in ARCHITECTURE.md (Alarm).
+-- A due recurring alarm gets its tick in msg.k.
 local function due(msg, now)
   if not msg.every then return now >= (msg.at or msg.posted) end
   local k = last_tick(msg, now)
