@@ -37,7 +37,7 @@ start-no-attach | skills/rex-teams/scripts/postman.lua | local session = home()\
 pid-self | skills/rex-teams/scripts/postman.lua | pid=$PPID | pid=$$ | tests/postman.lua | OSC 7577 would name a short-lived sh instead of the `rex do` that owns the postman
 
 # pane.lua
-exists-no-attach | skills/rex-teams/scripts/pane.lua | lib.attach(session, addr.host)\n  return lib.call | return lib.call | tests/pane.lua | every check would raise, so every message is held forever and nobody is told
+exists-no-attach | skills/rex-teams/scripts/pane.lua | lib.attach(session, addr.host)\n  if lib.call | if lib.call | tests/pane.lua | every check would raise, so every message is held forever and nobody is told
 attach-helper-no-attach | skills/rex-teams/scripts/pane.lua | lib.attach(session, addr.host)\n  return session, block | return session, block | tests/pane.lua | the paste, Enter and copy would be refused by Rex
 exited-counts-alive | skills/rex-teams/scripts/pane.lua | addr.host).last_exit then | addr.host).last_exit and false then | tests/pane.lua | a pane whose program exited would count as there, so messages are typed into a dead pane
 swallowed-paste | skills/rex-teams/scripts/pane.lua | lib.call("block.event", { session_id = session, block_id = block, event = { type = "paste" | pcall(lib.call, "block.event", { session_id = session, block_id = block, event = { type = "paste" | tests/pane.lua | a failed paste would count as delivered
