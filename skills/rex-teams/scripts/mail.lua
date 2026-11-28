@@ -24,17 +24,15 @@ local mail = {}
 function mail.dir() return lib.path("outbox") end
 function mail.file(id) return lib.path("outbox", id .. ".json") end
 
-local function exists(path)
-  local f = io.open(path)
-  if f then f:close() end
-  return f ~= nil
-end
-
 -- Write MSG atomically: a reader sees the old file or the new one. With
 -- ONLY_IF_THERE, a file someone deleted stays deleted; returns false then.
 function mail.write(msg, only_if_there)
   local path = mail.file(msg.id)
-  if only_if_there and not exists(path) then return false end
+  if only_if_there then
+    local f = io.open(path)
+    if not f then return false end
+    f:close()
+  end
   lib.write(path .. ".tmp", rex.json.encode(msg))
   assert(os.rename(path .. ".tmp", path))
   return true
@@ -48,8 +46,7 @@ end
 -- the messages to one receiver posted in the same second.
 function mail.before(a, b)
   if a.posted ~= b.posted then return a.posted < b.posted end
-  if a.seq ~= b.seq then return a.seq < b.seq end
-  return a.id < b.id
+  return a.seq < b.seq
 end
 
 -- The queue, oldest first. FILTER may name { block, host } to list only

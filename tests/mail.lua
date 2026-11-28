@@ -260,6 +260,27 @@ trial("notices to one sender in one second are listed in the order they were wri
   os.time = real_time
   assert(ok, err)
 end)
+trial("posts in one second to a receiver on another host are numbered in the order sent", function()
+  os.execute("mkdir -p " .. quote(root .. "/outbox"))
+  rex.call = function(method, args)
+    if method == "block.method" and args.method == "list_dir" and args.args.path == root .. "/outbox" then
+      local entries = {}
+      for _, name in ipairs(outbox_files()) do entries[#entries + 1] = { name = name } end
+      return { status = "ok", entries = entries }
+    end
+    return servers[""].call(method, args)
+  end
+  local real_time = os.time
+  os.time = function() return 1000 end
+  local ok, err = pcall(function()
+    for i = 1, 3 do mail.post({ to = "Builder", host = "ws", text = "part " .. i }) end
+    local got = mail.list({ block = "block:far", host = "ws" })
+    assert(#got == 3, #got)
+    for i, msg in ipairs(got) do assert(msg.seq == i - 1 and msg.text == "part " .. i, "part " .. i .. " is " .. msg.text .. ", seq " .. msg.seq) end
+  end)
+  os.time = real_time
+  assert(ok, err)
+end)
 trial("a post never replaces a queued file, even when the time and letters repeat", function()
   local real_time, real_random = os.time, math.random
   -- Two posts in one second draw the same four letters, then other ones.
