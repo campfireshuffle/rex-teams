@@ -91,7 +91,7 @@ A tab with one pane goes by its tab label. In a split tab, each pane goes by its
 
 To reply to a message, run the command in its header.
 
-`send.lua` prints `queued message <id> for <name>` and returns; don't wait or check. The postman types it in at once, busy receiver or not, and its CLI decides when to act on it. The postman waits only while Rex can't reach the receiver's host, or for an alarm's time. If the receiver's pane is gone, its files can't be copied, or the paste or Enter failed or may not have finished, you get one message from `rex-teams postman` saying why and quoting your message's text; a failed message isn't sent again.
+`send.lua` prints `queued message <id> for <name>` and returns; don't wait or check. The postman types it in at once, busy receiver or not, and its CLI decides when to act on it. The postman waits only while Rex can't reach the receiver's host, or for an alarm's time. If the receiver's pane is gone or its program has exited, its files can't be copied, or the paste or Enter failed or may not have finished, you get one message from `rex-teams postman` saying why and quoting your message's text; a failed message isn't sent again.
 
 These commands are quoted for POSIX shells. Write your text inside the single quotes, and write a `'` in it as `'\''` (`''` in PowerShell).
 
@@ -106,7 +106,7 @@ Add `host=LABEL`, a label from `rex hosts`, to reach agents on another Rex host.
 
 A message from another host names its Rex host id. To reply, fill in your own `send.lua` path and your label for that host; `rex hosts --json` lists each label with its host id. If the host isn't there, your Rex can't reach it: tell the user instead of retrying.
 
-Short IDs that look like numbers (e.g. `77e564`, `123456`) get mangled by `rex do` (issue #38). Use the full ID, or `--args '{"block":"77e564","message":"..."}'`.
+Short IDs that look like a number with an exponent (e.g. `77e564`) get mangled by `rex do` (issue #38). Use the full ID, or `--args '{"block":"77e564","message":"..."}'`.
 
 `file=PATH` attaches a file or folder; for several, use `--args '{"block":"…","message":"…","file":["a","b"]}'`. On the same host the message lists their paths. Across hosts they're copied to the receiver's `/tmp/rex-teams/inbox/<block>/<id>/` first, and the message names that folder, which the receiver can remove once it has read them. Receivers remove only that message folder, not `inbox/<block>/`. A Windows sender can't send files to another host yet.
 

@@ -18,15 +18,18 @@ local function attach(addr)
   return session, block
 end
 
--- Whether the pane still exists with its program running. Rex keeps a pane
--- open after its program exits, with the exit in last_exit; that counts as
--- gone. Raises when Rex can't reach its host.
+-- Whether the pane still exists with its program running, and if not,
+-- why not. Rex keeps a pane open after its program exits, with the exit in
+-- last_exit. Raises when Rex can't reach its host.
 function pane.exists(addr)
   local found = lib.call("target.resolve", { queries = { addr.block }, kinds = { "block" } }, addr.host).results[1]
-  if found.status ~= "resolved" then return false end
+  if found.status ~= "resolved" then return false, "that pane is gone" end
   local session, block = found.target.session_id, found.target.block_id
   lib.attach(session, addr.host)
-  return lib.call("block.method", { session_id = session, block_id = block, method = "process", args = {} }, addr.host).last_exit == nil
+  if lib.call("block.method", { session_id = session, block_id = block, method = "process", args = {} }, addr.host).last_exit then
+    return false, "its program has exited"
+  end
+  return true
 end
 
 -- Type TEXT, one line, into the pane: paste it, then press Enter. A paste

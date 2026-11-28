@@ -161,15 +161,17 @@ rex = {
 
 -- Fake receivers in place of pane.lua. Each check takes the next entry of
 -- the receiver's script, and the last entry stays: "up", "down" (raises,
--- as a Rex call to a host that's down does) or "gone".
+-- as a Rex call to a host that's down does), "gone" or "exited".
 function fake.exists(addr)
   local r = S.receivers[addr.block]
-  if not r then return false end
+  if not r then return false, "that pane is gone" end
   local now = r.script[1]
   if #r.script > 1 then table.remove(r.script, 1) end
   r.checks[#r.checks + 1] = S.t
   if now == "down" then error("rex.server: dial tcp: timeout", 0) end
-  return now == "up"
+  if now == "gone" then return false, "that pane is gone" end
+  if now == "exited" then return false, "its program has exited" end
+  return true
 end
 -- A paste of a recurring alarm records the tick it carries, msg.k, which
 -- the postman saves before the paste.
@@ -550,6 +552,15 @@ trial("a receiver that's gone: one notice with the text, and the file is deleted
   start()
   run_to(S.t + 100)
   assert(#me.puts == 1 and me.puts[1].text:find("Message 1795671000-abcd to Reviewer can't be delivered: that pane is gone. It said: hi", 1, true), texts(me.puts))
+  assert(#queued() == 0)
+end)
+trial("a receiver whose program exited: the notice says so", function()
+  local me = receiver("block:me")
+  receiver("block:to", { "exited" })
+  queue({})
+  start()
+  run_to(S.t + 100)
+  assert(#me.puts == 1 and me.puts[1].text:find("Message 1795671000-abcd to Reviewer can't be delivered: its program has exited. It said: hi", 1, true), texts(me.puts))
   assert(#queued() == 0)
 end)
 trial("nothing tells you about your own messages, and notices cause no notices", function()

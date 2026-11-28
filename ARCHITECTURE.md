@@ -48,7 +48,7 @@ agent ◄─ "queued message <id> for <name>"
 ```
 postman ─ outbox check every 2 s
         ─ each receiver's due messages, in posted order (posted, then seq)
-        ─ pane.exists ─► gone            ─► one notice to the sender, with the message's text; the file is deleted
+        ─ pane.exists ─► gone, or exited ─► one notice to the sender, with the message's text; the file is deleted
                       └► raises          ─► hold (Rex can't reach it): the rest of that receiver's queue waits, in order
                       └► there           ─► attach files (another host) ─► save pasted_at ─► pane.type
 pane.type went through ─► delete the file (a recurring alarm waits for its next tick)
@@ -64,7 +64,7 @@ An alarm waiting for its next tick, or a one-shot not yet due, doesn't hold up t
 
 **Notice**
 ```
-receiver gone, or files can't be copied ─► one notice with the message's text, and the file is deleted
+receiver gone or exited, or files can't be copied ─► one notice with the message's text, and the file is deleted
 paste or Enter failed, or may not have finished ─► one notice with the message's text, and the message (or a recurring alarm's tick) is dropped
 notices, and messages you sent yourself, never cause notices
 ```

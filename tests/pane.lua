@@ -56,7 +56,8 @@ end
 trial("exists: a pane there, or gone, without reading the screen", function()
   reset({ ["b:1"] = { session = "s:1" } })
   assert(pane.exists({ block = "b:1" }) == true)
-  assert(pane.exists({ block = "b:gone" }) == false)
+  local there, why = pane.exists({ block = "b:gone" })
+  assert(there == false and why == "that pane is gone", tostring(why))
   for _, c in ipairs(calls) do assert(not c:find("format") and not c:find("capture"), c) end
 end)
 trial("exists: a pane whose program exited is gone; a shell whose last command failed isn't", function()
@@ -65,7 +66,8 @@ trial("exists: a pane whose program exited is gone; a shell whose last command f
     ["b:quit"] = { session = "s:1", process = { last_exit = { exit_code = 0 } } },
     ["b:shell"] = { session = "s:1", process = { foreground = { pid = 2, name = "fish" } } },
   })
-  assert(pane.exists({ block = "b:exited" }) == false)
+  local there, why = pane.exists({ block = "b:exited" })
+  assert(there == false and why == "its program has exited", tostring(why))
   assert(pane.exists({ block = "b:quit" }) == false, "a program that exited cleanly counts as alive")
   assert(pane.exists({ block = "b:shell" }) == true)
 end)

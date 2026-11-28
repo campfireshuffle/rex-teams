@@ -69,9 +69,9 @@ function M.deliver(msg, now)
   if msg.pasted_at then return finish(msg, "the postman stopped between its paste and its Enter") end
   if not due(msg, now) then return end
 
-  local reached, there = pcall(pane.exists, msg.to)
+  local reached, there, why = pcall(pane.exists, msg.to)
   if not reached then return true end -- held, never given up on
-  if not there then return give_up(msg, "can't be delivered: that pane is gone") end
+  if not there then return give_up(msg, "can't be delivered: " .. why) end
   if msg.files then
     local copied, err = pcall(pane.attach, msg.to, msg.files, msg.id)
     if not copied then return give_up(msg, "wasn't sent: " .. tostring(err)) end
