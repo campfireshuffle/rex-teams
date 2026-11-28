@@ -6,7 +6,9 @@ local json = dofile("tests/lib/json.lua")
 local calls, events, servers
 -- A mock Rex server with BLOCKS, each { session, process? }. A block's
 -- process is a live foreground program unless it says otherwise. Like Rex,
--- it refuses a call on a session this script hasn't attached to.
+-- it refuses a call on a session this script hasn't attached to, and an
+-- event whose kind is in FAIL ("paste" or "key") fails, as Rex's can.
+local fail
 local function server(name, blocks)
   local s, attached = {}, {}
   function s.call(method, args)
@@ -25,6 +27,7 @@ local function server(name, blocks)
     end
     if method == "block.method" and args.method == "list_dir" then return { status = "ok" } end
     if method == "block.event" then
+      if fail == args.event.type then return nil, "block.event: timed out" end
       events[#events + 1] = { server = name, session = args.session_id, block = args.block_id, event = args.event }
       return {}
     end
@@ -34,7 +37,7 @@ local function server(name, blocks)
 end
 
 local function reset(blocks, remote)
-  calls, events = {}, {}
+  calls, events, fail = {}, {}, nil
   servers = { [""] = server("local", blocks), ws = server("ws", remote or {}) }
   rex = { json = json, call = servers[""].call,
     server = function(label) if not servers[label] or label == "" then error('rex.server: no host named "' .. label .. '"', 0) end return servers[label] end }
@@ -80,9 +83,18 @@ trial("type pastes, then presses and releases Enter, in the addressed pane, afte
   assert(#events == 3 and events[1].event.type == "paste" and events[1].event.payload.text == "hello")
   for i, action in ipairs({ "press", "release" }) do
     local k = events[i + 1].event.payload
-    assert(events[i + 1].event.type == "key" and k.key == "enter" and k.text == "\r" and k.action == action)
+    -- Enter with no modifiers: Shift+Enter would add a line instead.
+    assert(events[i + 1].event.type == "key" and k.key == "enter" and k.mods == "" and k.text == "\r" and k.action == action)
   end
   for _, e in ipairs(events) do assert(e.server == "local" and e.session == "s:1" and e.block == "b:1") end
+end)
+trial("type raises when the paste or the Enter fails, so the postman tells the sender", function()
+  for _, kind in ipairs({ "paste", "key" }) do
+    reset({ ["b:1"] = { session = "s:1" } })
+    fail = kind
+    local ok, err = pcall(pane.type, { block = "b:1" }, "hello")
+    assert(not ok and tostring(err):find("block.event: timed out", 1, true), kind .. ": " .. tostring(err))
+  end
 end)
 trial("a pane whose tab moved to another session after the post gets the message there", function()
   local blocks = { ["b:1"] = { session = "s:1" } }
