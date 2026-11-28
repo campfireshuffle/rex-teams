@@ -11,13 +11,16 @@
 -- prints a table. It exits non-zero if any scenario FAILs, it stops early,
 -- or it can't close the postman it started.
 --
--- It uses the postman in this checkout, so stop any other postman first
--- (a live block labelled "rex-teams postman" in the rex-teams session).
+-- It tests the postman in this checkout, so it refuses to start while
+-- another postman is live (a live block labelled "rex-teams postman" in the
+-- rex-teams session): stop that one first.
 local repo = debug.getinfo(1, "S").source:gsub("^@", ""):match("^(.*[/\\])") .. "../../"
 local scripts = repo .. "skills/rex-teams/scripts/"
 local a = rex.args
 local T = "com.superlogical.terminal"
 local quiet = " Test only: don't reply, and don't run anything."
+local live = dofile(scripts .. "postman.lua").live
+if live()[1] then error("another postman is live, " .. live()[1] .. ", so the battery wouldn't test this checkout's; stop it first", 0) end
 
 local clis = {
   { name = "claude-code", cmd = { "claude" } },
@@ -130,11 +133,19 @@ local function shows(block, text, host, s)
   return (screen(block, host, s):gsub("%s", ""):gsub("┃", "")):find((text:gsub("%s", "")), 1, true) ~= nil
 end
 
+-- Whether an agent took the message in: a message pasted without its
+-- Enter shows on the screen too, but starts no turn. Called as soon as the
+-- message's file is gone, which is just after its Enter.
+local function submitted(c)
+  return wait_for(function() return status(c.block) == "working" end, 5)
+end
+
 local scenarios = {}
 function scenarios.idle(c)
   local id = send(c.block, "Idle delivery.")
   local ok, took = delivered(c.block, id)
-  return ok and seen(c.block, id), ("%.1fs"):format(took)
+  local turn = ok and submitted(c)
+  return turn and seen(c.block, id), ("%.1fs%s"):format(took, turn and "" or ", no turn started")
 end
 function scenarios.busy(c)
   paste(c.block, "Run the shell command `sleep 15` and then reply with just OK.")
@@ -154,7 +165,8 @@ function scenarios.file(c)
   f:close()
   local id = run("send.lua", { block = c.block, message = "File attached." .. quiet, file = path })
   local ok, took = delivered(c.block, id)
-  return ok and seen(c.block, id) and shows(c.block, path), ("%.1fs"):format(took)
+  local turn = ok and (not c.cmd or submitted(c))
+  return turn and seen(c.block, id) and shows(c.block, path), ("%.1fs%s"):format(took, turn and "" or ", no turn started")
 end
 function scenarios.shell(c)
   local id = send(c.block, "Shell paste.")
@@ -174,9 +186,6 @@ end
 
 -- Run ---------------------------------------------------------------------------------
 
-local live = dofile(scripts .. "postman.lua").live
-local before = {}
-for _, id in ipairs(live()) do before[id] = true end
 local cleanup = {}
 local ok, err = pcall(function()
   math.randomseed(os.time())
@@ -223,10 +232,10 @@ local ok, err = pcall(function()
 end)
 if not ok then print("battery stopped: " .. tostring(err)) end
 
--- Clean up: the scratch sessions, and the postman if this run started it.
+-- Clean up: the scratch sessions, and the postman this run started.
 call("session.destroy", { session_id = session })
 local unclosed
-for _, started in ipairs(live()) do if not before[started] then
+for _, started in ipairs(live()) do
   local closed, why = pcall(function()
     local found = call("target.resolve", { queries = { started }, kinds = { "block" } }).results[1]
     if found.status ~= "resolved" then error("Rex can't find it (" .. found.status .. ")", 0) end
@@ -238,7 +247,7 @@ for _, started in ipairs(live()) do if not before[started] then
     unclosed = "couldn't close the postman this run started, " .. started .. ": " .. tostring(why)
     print(unclosed)
   end
-end end
+end
 if cleanup.far then pcall(call, "session.destroy", { session_id = cleanup.far }, a.host) end
 print("")
 local header = "| scenario |"
