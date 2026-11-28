@@ -20,6 +20,7 @@ Thanks for helping. rex-teams is meant to stay small: a few Lua scripts that Rex
 - Title it as a [Conventional Commit](https://www.conventionalcommits.org), such as `fix: keep the reply header on one line`. Pull requests are squash-merged, and the title becomes the commit message.
 - Keep each pull request to one change.
 - CI must pass before merging.
+- Before a merge, run `luajit tests/checks/mutate.lua`, and add any new mutant a reviewer finds to `tests/checks/mutants.txt`.
 
 ## Conduct
 

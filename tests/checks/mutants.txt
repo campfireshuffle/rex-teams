@@ -1,0 +1,55 @@
+# Broken variants ("mutants") the tests must catch. Run: luajit tests/checks/mutate.lua [name]
+# One per line: name | file | exact text | replacement | test file | why it matters
+# The text must appear exactly once in the file. \n in the text or replacement is a newline.
+# Add every new mutant a reviewer finds, with the test that catches it.
+
+# postman.lua: delivery
+cached-clock | skills/rex-teams/scripts/postman.lua | local held = {} | local held, now = {}, os.time() | tests/postman.lua | (sets up the next line)
+cached-clock | skills/rex-teams/scripts/postman.lua | pcall(M.deliver, msg, os.time()) | pcall(M.deliver, msg, now) | tests/postman.lua | slow checks of other receivers would make an alarm tick look not yet due, and drop it
+held-not-holding | skills/rex-teams/scripts/postman.lua | held[key] = not done or holds | held[key] = false | tests/postman.lua | a later message would overtake a held one to the same receiver
+unreachable-gives-up | skills/rex-teams/scripts/postman.lua | if not reached then return true end | if not reached then return give_up(msg, "unreachable") end | tests/postman.lua | an unreachable host would lose the message; it must be held
+gone-held | skills/rex-teams/scripts/postman.lua | if not there then return give_up(msg, "can't be delivered: that pane is gone") end | if not there then return true end | tests/postman.lua | a message to a closed pane would block its queue forever, and the sender never hears
+paste-after-failed-copy | skills/rex-teams/scripts/postman.lua | if not copied then return give_up(msg, "wasn't sent: " .. tostring(err)) end | | tests/files.lua | a message would be pasted naming files that never arrived
+no-save-before-paste | skills/rex-teams/scripts/postman.lua | if not mail.write(msg, true) then return end | | tests/postman.lua | a postman that stops mid-paste would paste it again, and a cancelled message would be pasted
+cancel-ignored | skills/rex-teams/scripts/postman.lua | if not mail.write(msg, true) then return end | mail.write(msg) | tests/postman.lua | a message its sender deleted would come back and be pasted
+repaste-after-restart | skills/rex-teams/scripts/postman.lua | if msg.pasted_at then return finish(msg, "the postman stopped between its paste and its Enter") end | | tests/postman.lua | a message interrupted mid-paste would be pasted twice
+failed-paste-silent | skills/rex-teams/scripts/postman.lua | finish(msg, tostring(err))\nend | finish(msg)\nend | tests/postman.lua | a failed paste would be dropped and its sender never told
+tick-not-saved | skills/rex-teams/scripts/postman.lua | msg.pasted_at = nil\n  mail.write(msg) | msg.pasted_at = nil | tests/postman.lua | a recurring alarm's tick isn't saved, so the next pass reports a half paste
+notice-to-self | skills/rex-teams/scripts/postman.lua | if msg.to.block == msg.from.block then return end | | tests/postman.lua | an alarm you set would send you notices about itself
+alarm-early | skills/rex-teams/scripts/postman.lua | return now >= (msg.at or msg.posted) | return true | tests/postman.lua | an `at` alarm would go off at once
+tick-retag | skills/rex-teams/scripts/postman.lua | msg.k = k\n | msg.k = (msg.k or 0) + 1\n | tests/postman.lua | ticks missed while asleep would go out one by one instead of collapsing to the latest
+give-up-keeps | skills/rex-teams/scripts/postman.lua | .. msg.text)\n  mail.remove(msg.id) | .. msg.text) | tests/postman.lua | a message given up on would stay queued and its sender hear again every pass
+
+# postman.lua: one postman
+no-lock | skills/rex-teams/scripts/postman.lua | while not assert(rex.exec(lib.windows and { "cmd", "/c", "mkdir", lock_path } or { "mkdir", lock_path })).ok do | while false do | tests/postman.lua | senders that find no postman at once would each start one
+lock-kept-on-failure | skills/rex-teams/scripts/postman.lua | local ok, err = pcall(start)\n  unlock()\n  if not ok then error(err, 0) end | start()\n  unlock() | tests/postman.lua | a postman that fails to start would leave the lock, and block every sender for 30 s
+lock-kept-on-success | skills/rex-teams/scripts/postman.lua | local ok, err = pcall(start)\n  unlock() | local ok, err = pcall(start) | tests/postman.lua | the lock would never be freed after a start
+no-stale-break | skills/rex-teams/scripts/postman.lua | if waited >= 30 then | if waited >= 60 then | tests/postman.lua | a lock left by a killed sender would hold senders past the documented 30 s
+no-recheck-in-lock | skills/rex-teams/scripts/postman.lua | local function start()\n  if M.live()[1] then return end\n | local function start()\n | tests/postman.lua | a sender that got the lock after another started a postman would start a second one
+label-at-start | skills/rex-teams/scripts/postman.lua | session_id = session,\n    flavor | session_id = session,\n    label = "rex-teams postman",\n    flavor | tests/postman.lua | a postman that fails before it reports would count as live (decision 010 Q2)
+second-postman-stays | skills/rex-teams/scripts/postman.lua | if live[1] and live[1] < me then | if false then | tests/postman.lua | a newer postman wouldn't quit, so messages are pasted twice
+live-any-program | skills/rex-teams/scripts/postman.lua | if not p.last_exit and p.foreground and p.foreground.name == "rex" then | if not p.last_exit then | tests/postman.lua | a postman block back as a plain shell after a restart would count as live, and nothing delivers
+start-exit-ignored | skills/rex-teams/scripts/postman.lua | if asked and p.last_exit then error | if false then error | tests/postman.lua | a postman that exited at start would make ensure wait 5 s and give the wrong error
+live-no-attach | skills/rex-teams/scripts/postman.lua | lib.attach(s.session_id)\n | | tests/postman.lua | Rex refuses calls to an unattached session, so every post would crash once a rex-teams session exists
+start-no-attach | skills/rex-teams/scripts/postman.lua | local session = home()\n  lib.attach(session)\n | local session = home()\n | tests/postman.lua | Rex refuses calls to an unattached session, so no postman would start
+pid-self | skills/rex-teams/scripts/postman.lua | pid=$PPID | pid=$$ | tests/postman.lua | OSC 7577 would name a short-lived sh instead of the `rex do` that owns the postman
+
+# pane.lua
+exists-no-attach | skills/rex-teams/scripts/pane.lua | lib.attach(session, addr.host)\n  return lib.call | return lib.call | tests/pane.lua | every check would raise, so every message is held forever and nobody is told
+attach-helper-no-attach | skills/rex-teams/scripts/pane.lua | lib.attach(session, addr.host)\n  return session, block | return session, block | tests/pane.lua | the paste, Enter and copy would be refused by Rex
+exited-counts-alive | skills/rex-teams/scripts/pane.lua | .last_exit == nil | ~= nil | tests/pane.lua | a pane whose program exited would count as there, so messages are typed into a dead pane
+swallowed-paste | skills/rex-teams/scripts/pane.lua | lib.call("block.event", { session_id = session, block_id = block, event = { type = "paste" | pcall(lib.call, "block.event", { session_id = session, block_id = block, event = { type = "paste" | tests/pane.lua | a failed paste would count as delivered
+swallowed-enter | skills/rex-teams/scripts/pane.lua | lib.call("block.event", { session_id = session, block_id = block, event = { type = "key" | pcall(lib.call, "block.event", { session_id = session, block_id = block, event = { type = "key" | tests/pane.lua | a failed Enter would count as delivered
+shift-enter | skills/rex-teams/scripts/pane.lua | mods = "", consumed | mods = "shift", consumed | tests/pane.lua | Shift+Enter adds a newline instead of submitting
+cp-failure-ignored | skills/rex-teams/scripts/pane.lua | if not r.ok then\n    error("rex cp | if false then\n    error("rex cp | tests/files.lua | a failed copy to another host would be pasted as if the files arrived
+no-root-made | skills/rex-teams/scripts/pane.lua | if root == "missing" then | if false then | tests/files.lua | rex cp would copy inbox to a missing /tmp/rex-teams by renaming it, so files land in the wrong place
+
+# mail.lua
+list-limit-1 | skills/rex-teams/scripts/mail.lua | limit = 10000 | limit = 1 | tests/postman.lua | the postman would see only one queued message at a time
+unordered-seq | skills/rex-teams/scripts/mail.lua | return a.seq < b.seq | return a.id < b.id | tests/mail.lua | messages posted in one second would go in random order
+notice-seq-0 | skills/rex-teams/scripts/mail.lua | seq = seq(from, now), to = from | seq = 0, to = from | tests/mail.lua | two notices to one sender in one second would come out of order
+crosshost-seq-nohost | skills/rex-teams/scripts/mail.lua | seq({ block = block, host = host }, now) | seq({ block = block }, now) | tests/mail.lua | messages to one remote receiver in one second would be ordered by random id letters
+
+# lint.lua, spawn.lua
+lint-format | skills/rex-teams/scripts/pane.lua | local pane = {} | local pane = {} local _ = { method="format" } | tests/lint.lua | the lint must catch a screen read however it's spaced
+depth-not-limited | skills/rex-teams/scripts/spawn.lua | depth = math.min(depth, allowed - 1) | | tests/spawn.lua | a subagent could give its own subagents more depth than it was allowed
