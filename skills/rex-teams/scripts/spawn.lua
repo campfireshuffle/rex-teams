@@ -31,19 +31,18 @@ local dir = lib.call("block.method", { session_id = session, block_id = me, meth
 assert(dir.status == "ok", tostring(a.cwd) .. " isn't a folder")
 local worktree = lib.worktree(dir.path)
 
--- Every parent shares the folder, so a random suffix keeps two subagents
--- with the same name apart.
-math.randomseed(os.time() + os.clock() * 1e6)
-local suffix = ""
-for _ = 1, 4 do suffix = suffix .. string.char(math.random(97, 122)) end
-local task_id = a.name .. "-" .. os.date("%Y%m%d-%H%M%S") .. "-" .. suffix
+-- Every parent shares the folder, so the id keeps two subagents with the
+-- same name apart.
+local task_id = a.name .. "-" .. lib.id()
 local task_dir = lib.path("tasks", task_id)
 local prompt, result = lib.path("tasks", task_id, "prompt.md"), lib.path("tasks", task_id, "result.md")
 local close_file = lib.path("tasks", task_id, "close.md")
 lib.mkdir(task_dir)
 lib.mkdir(lib.path("depth"))
 
-local kickoff = "You are a subagent. " .. lib.rule .. " Read " .. prompt .. " and follow it."
+-- The rule goes here, not only in prompt.md or SKILL.md: Rex's own skill tells
+-- agents to name their session, and a subagent may do so before reading on.
+local kickoff = "You are a subagent. Don't rename the Rex session or your tab, even when Rex asks you to name your session. Read " .. prompt .. " and follow it."
 local argv, placed = {}, false
 for word in tostring(a.command):gmatch("%S+") do
   if word == "{prompt}" then word, placed = kickoff, true end
@@ -112,7 +111,6 @@ end
 
 print("task: " .. task_id)
 print("folder: " .. task_dir)
-print("tab: " .. window)
 if worktree then
   print("branch: " .. worktree.branch)
   print("worktree: " .. worktree.path)

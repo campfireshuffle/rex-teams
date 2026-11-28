@@ -1,130 +1,40 @@
--- rex do <skill>/scripts/alarm.lua in=1200 message="Check the deployment"
--- Use every=1800 to repeat. The target defaults to the calling agent.
+-- Set an alarm: a message to an agent, at a time or repeating.
 --
--- An alarm is a block running `rex do <this script> --args <json>`, and its
--- arguments are all there is to it. The worker tells Rex that command
--- (OSC 7577), so a trust rule can start it again after Rex restarts.
--- Rex doesn't resume programs on Windows, so there the worker doesn't report.
-local lib = dofile(debug.getinfo(1, "S").source:gsub("^@", ""):match("^(.*[/\\])") .. "lib.lua")
-local script = lib.dir .. "alarm.lua"
+--   rex do <skill>/scripts/alarm.lua in=SECONDS message='MESSAGE' [block=BLOCK]
+--   rex do <skill>/scripts/alarm.lua every=SECONDS message='MESSAGE' [block=BLOCK]
+--   rex do <skill>/scripts/alarm.lua list=true
+--
+-- every= is at least 10 seconds; in= is any positive number.
+-- The target defaults to the calling agent. Alarms reach this host only, so
+-- host= is refused. An alarm is a queued message with a time; the postman
+-- delivers it as it does every message, by the tick rule in ARCHITECTURE.md
+-- (Alarm). Cancel one by deleting its file, which it prints.
+local dir = debug.getinfo(1, "S").source:gsub("^@", ""):match("^(.*[/\\])")
+local lib = dofile(dir .. "lib.lua")
+local mail = dofile(dir .. "mail.lua")
 local a = rex.args
+local need = lib.need
+need(a.host == nil, "alarms reach this host only")
 
-local function b64(s)
-  local abc = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
-  local out = {}
-  for i = 1, #s, 3 do
-    local x, y, z = s:byte(i, i + 2)
-    local n = x * 65536 + (y or 0) * 256 + (z or 0)
-    local function digit(shift) local d = math.floor(n / shift) % 64 return abc:sub(d + 1, d + 1) end
-    out[#out + 1] = digit(262144) .. digit(4096) .. (y and digit(64) or "=") .. (z and digit(1) or "=")
-  end
-  return table.concat(out)
-end
-
--- Tell Rex how to start this worker again, or that it shouldn't (OSC 7577).
--- The owner is this `rex do`, the shell's parent. The token stays in the
--- shell's environment, never on a command line.
-local function report(fields)
-  if lib.windows then return end
-  if not os.getenv("OSC7577_TOKEN") then error("alarm worker failed: OSC7577_TOKEN isn't set, so Rex can't resume this alarm", 0) end
-  local r = assert(rex.exec({ "sh", "-c", 'body="pid=$PPID:time=$1:$2"; printf "%s:mac=" "$body"; '
-    .. 'printf "%s:%s" "$body" "$OSC7577_TOKEN" | sha256sum | cut -c1-64', "sh", tostring(os.time()), fields }))
-  local body = r.ok and r.stdout:match("^(pid=%d+:.*:mac=%x+)%s*$")
-  if not (body and #body:match("mac=(%x+)$") == 64) then
-    error("alarm worker failed: the OSC 7577 report failed: " .. tostring(r.stderr ~= "" and r.stderr or r.stdout), 0)
-  end
-  io.stdout:write("\27]7577;", body, "\27\\")
-  io.stdout:flush()
-end
-
-if a.worker then
-  lib.attach(a.session)
-  local argv = {}
-  for i, word in ipairs({ "rex", "do", script, "--args", rex.json.encode(a) }) do argv[i] = b64(word) end
-  report("argv=" .. table.concat(argv, ","))
-  local function fire(note)
-    lib.paste_line(a.session, a.block, a.message .. note)
-  end
-  if a.at then
-    -- os.time() is whole seconds behind the real time, so this never fires
-    -- early. Starting a second or more after its time means Rex was down.
-    local late = os.time() - a.at
-    print("alarm: due at " .. os.date("%H:%M:%S", a.at))
-    rex.after(math.max(0, -late), function()
-      fire(late >= 1 and (" [late by " .. late .. "s, Rex restarted]") or "")
-      report("clear=1")
-      -- Rex resumes the worker under a shell, which would stay in the pane.
-      local session, block = lib.me()
-      lib.call("block.close", { session_id = session, block_id = block })
-      rex.stop(0)
-    end)
-  else
-    -- Tick k falls at start + k*every. os.time() is whole seconds, so a tick
-    -- may be up to 1s late, never early or twice. Ticks missed while Rex was
-    -- down or the machine slept are skipped: k jumps to the next tick due,
-    -- and a timer that runs 1s or more late doesn't fire.
-    local k = 0
-    local function next_tick()
-      k = math.max(k + 1, math.floor((os.time() - 1 - a.start) / a.every) + 1)
-      local due = a.start + k * a.every
-      local wait = math.max(0, due - os.time())
-      print("alarm: next at " .. os.date("%H:%M:%S", os.time() + wait))
-      rex.after(wait, function()
-        if os.time() - due < 1 then fire("") end
-        next_tick()
-      end)
+if a.list then
+  local _, me = lib.me()
+  for _, msg in ipairs(mail.list()) do
+    if (msg.at or msg.every) and msg.from.block == me then
+      print(msg.id .. "  " .. (msg.every and ("every " .. msg.every .. "s") or ("at " .. os.date("%H:%M:%S", msg.at)))
+        .. "  to " .. msg.to.name .. ": " .. msg.text)
+      print("  cancel: rm " .. mail.file(msg.id))
     end
-    next_tick()
   end
   return
 end
 
-local seconds = assert(a["in"] or a.every, "use in=SECONDS or every=SECONDS")
-assert(seconds > 0 and not (a["in"] and a.every), "use one positive interval")
-local message = tostring(assert(a.message, "message is required"))
-assert(not message:find("[\r\n]"), "the message must be one line")
-if not lib.windows then
-  local r = rex.exec({ "sh", "-c", "command -v sha256sum" })
-  assert(r and r.ok, "alarm.lua needs sha256sum (macOS 15+ or coreutils)")
-end
-
-local from_session, from_block = lib.me()
-local session, block = a.session or from_session, a.block or from_block
-local header = session == from_session and block == from_block
-  and "[alarm you set] "
-  or lib.header(from_session, from_block)
-local now = os.time()
-local args = { worker = true, session = session, block = block, message = header .. message,
-  at = a["in"] and now + a["in"], every = a.every, start = a.every and now }
-lib.attach(session)
-local alarm = lib.call("session.new_block", {
-  session_id = session,
-  label = "alarm: " .. message:sub(1, 40),
-  flavor = "com.superlogical.terminal.shell",
-  -- A worker that stops leaves its block, and its error, in place. A
-  -- one-shot closes its own block once it has fired.
-  options = { command = { "rex", "do", script, "--args", rex.json.encode(args) }, exit = { on_completion = false } },
-}).block_id
-print("alarm: " .. alarm)
-if lib.windows then return end
-
--- Rex says whether a rule trusts the worker once its report is in.
-local function chosen(records)
-  for _, r in ipairs(records or {}) do if r.chosen then return r end end
-end
-local function records()
-  return lib.call("com.superlogical.terminal.program_resume_records", { session_id = session, block_id = alarm, args = {} }).records
-end
-local record = chosen(records())
-if not record then
-  local ev = rex.wait("terminal.program_resume_changed", function(e) return e.block_id == alarm and chosen(e.records) end, 5)
-  record = chosen(ev and ev.records) or chosen(records())
-end
-if not record then
-  print("alarm: Rex has no resume record for this alarm after 5s. See why with: rex capture -b " .. alarm)
-elseif not record.trusted then
-  print("alarm: this alarm won't survive a Rex restart"
-    .. (record.untrusted_reason == "no_rule" and "" or " (" .. tostring(record.untrusted_reason) .. ")")
-    .. ". To keep alarms, add this to Rex's init.lua and run rex config reload: "
-    .. ('rex.set("resume.trust.rex-teams-alarm", { command = { "rex", "do", %q }, flags = { ["--args"] = { "keep", values = 1 } } })'):format(script))
-end
+local seconds = a["in"] or a.every
+need(seconds ~= nil and not (a["in"] and a.every), "use in=SECONDS or every=SECONDS")
+need(type(seconds) == "number" and seconds > 0, (a.every and "every" or "in") .. " must be a positive number of seconds")
+-- Timers round to whole seconds, so a shorter repeat could lose a tick.
+need(not a.every or a.every >= 10, "every must be at least 10 seconds")
+need(a.message ~= nil, "message is required")
+local _, me = lib.me()
+local id, name = mail.post({ to = a.block and tostring(a.block) or me, text = tostring(a.message),
+  at = a["in"] and os.time() + a["in"], every = a.every })
+print("alarm: " .. id .. " for " .. name .. ". Cancel it with: rm " .. lib.quote(mail.file(id)))

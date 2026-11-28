@@ -2,14 +2,16 @@
 -- so they need nothing but rex.
 local lib = {}
 
+-- Refuse with WHY, a plain sentence, unless OK. Rex prints an assert's
+-- file and line; error(why, 0) prints just why.
+function lib.need(ok, why)
+  if not ok then error(why, 0) end
+  return ok
+end
+
 lib.windows = package.config:sub(1, 1) == "\\"
 lib.sep = lib.windows and "\\" or "/"
 lib.dir = debug.getinfo(1, "S").source:gsub("^@", ""):match("^(.*[/\\])")
-
--- Rex tells every agent to name its session when its first task arrives.
--- The session and its tabs belong to the user, and tab labels are how agents
--- find each other, so every kickoff and message says this.
-lib.rule = "Don't rename the Rex session or your tab."
 
 -- Agent sandboxes usually let programs write to /tmp.
 lib.root = (lib.windows and assert(os.getenv("TEMP"), "TEMP isn't set, so rex-teams has no folder for its files")
@@ -75,10 +77,7 @@ end
 -- moves to another session, so look its session up instead of trusting an
 -- environment variable.
 function lib.me()
-  local block = assert(os.getenv("REX_BLOCK"), "run this inside a Rex terminal")
-  local found = lib.call("target.resolve", { queries = { block }, kinds = { "block" } }).results[1]
-  assert(found.status == "resolved", "Rex can't find your pane " .. block .. " (" .. found.status .. ")")
-  return found.target.session_id, found.target.block_id
+  return lib.target(nil, lib.need(os.getenv("REX_BLOCK"), "run this inside a Rex terminal"))
 end
 
 -- A script must attach to a session before it can act on it.
@@ -86,7 +85,9 @@ function lib.attach(session, host)
   lib.call("session.attach", { session_id = session }, host)
 end
 
--- Every block in a session, with its tab and pane labels.
+-- Every block in a session, with its name. An agent goes by its pane's
+-- label in a split tab, and by its tab's label otherwise. Rex labels an
+-- unnamed pane "shell".
 function lib.blocks(session, host)
   lib.attach(session, host)
   local out = {}
@@ -96,80 +97,49 @@ function lib.blocks(session, host)
       for _, block in ipairs(layer.blocks) do blocks[#blocks + 1] = block end
     end
     for _, block in ipairs(blocks) do
-      out[#out + 1] = { id = block.block_id, tab = window.label or "", pane = block.label or "", split = #blocks > 1 }
+      local pane = #blocks > 1 and block.label ~= "shell" and block.label
+      out[#out + 1] = { id = block.block_id, name = pane or window.label or "" }
     end
   end
   return out
 end
 
--- An agent goes by its pane's label in a split tab, and by its tab's label
--- otherwise. Rex labels an unnamed pane "shell".
-function lib.name(block)
-  if block.split and block.pane ~= "shell" then return block.pane end
-  return block.tab
-end
-
--- Paste one line into a terminal, then press Enter. A paste event lets the
--- program tell the text from the Enter that submits it.
-function lib.paste_line(session, block, text, host)
-  lib.call("block.event", { session_id = session, block_id = block, event = { type = "paste", payload = { text = text } } }, host)
-  for _, action in ipairs({ "press", "release" }) do
-    lib.call("block.event", { session_id = session, block_id = block, event = { type = "key", payload = {
-      key = "enter", mods = "", consumed_mods = "", text = "\r", unshifted_codepoint = 13, composing = false, action = action,
-    } } }, host)
+-- The name of BLOCK in SESSION on HOST, or its ID if it isn't there.
+function lib.name(session, block, host)
+  for _, b in ipairs(lib.blocks(session, host)) do
+    if b.id == block then return b.name end
   end
+  return block
 end
 
 -- The absolute paths of PATHS, read the way a program in BLOCK's terminal
--- would, so relative paths and ~ work. Each must exist.
+-- would, so relative paths and ~ work. Each must exist. BLOCK is on this
+-- host, so Lua can open the absolute path.
 function lib.locate(session, block, paths)
   local found = {}
   for _, path in ipairs(paths) do
     local dir = lib.call("block.method", { session_id = session, block_id = block, method = "list_dir", args = { path = path, limit = 1 } })
-    -- not_dir is a file, or a path through one, such as a.md/x, so look
-    -- for the name in its parent.
+    -- not_dir is a file, or a path through one, such as a.md/x, which
+    -- won't open.
     if dir.status == "not_dir" then
-      local parent, name = dir.path:match("^(.*)[/\\]([^/\\]+)$")
-      local up = lib.call("block.method", { session_id = session, block_id = block, method = "list_dir",
-        args = { path = parent == "" and "/" or parent:match("^%a:$") and parent .. "\\" or parent, files = true, prefix = name } })
-      local status = up.status == "not_dir" and "missing" or up.status
-      for _, entry in ipairs(up.entries or {}) do
-        if entry.name == name then status = "found" end
-      end
-      if status ~= "found" then error("file " .. path .. ": " .. (status == "ok" and "missing" or status), 0) end
+      local file = io.open(dir.path)
+      if not file then error("file " .. path .. ": missing", 0) end
+      file:close()
     elseif dir.status ~= "ok" then
       error("file " .. path .. ": " .. dir.status, 0)
     end
     -- The message is one line.
-    assert(not dir.path:find("[\r\n]"), "file " .. path .. ": a name with a line break can't go in a message")
+    lib.need(not dir.path:find("[\r\n]"), "file " .. path .. ": a name with a line break can't go in a message")
     found[#found + 1] = dir.path
   end
   return found
 end
 
-local cp_exit = { [3] = "that host's Rex has no rex cp", [4] = "can't reach that host" }
-
-local function rex_cp(host, session, from, to)
-  local r, err = rex.exec({ "rex", "-S", host, "cp", "-s", session, "-r", from, to }, { timeout = 600 })
-  if not r then error("rex cp to " .. host .. ": " .. tostring(err), 0) end
-  if not r.ok then
-    error("rex cp to " .. host .. " failed (exit " .. tostring(r.code) .. (cp_exit[r.code] and ", " .. cp_exit[r.code] or "")
-      .. "): " .. (r.stderr or ""):gsub("%s+$", ""), 0)
-  end
-end
-
--- Copy FILES, absolute paths here, into BLOCK's inbox on HOST with one
--- rex cp, and return their paths there and the folder holding them. The
--- receiver's /tmp/rex-teams may be a symlink, and rex cp merges into a
--- symlinked folder only when it's named as the destination, so the stage
--- holds inbox/<block>/<id>/ and goes to /tmp/rex-teams/ itself.
-function lib.send_files(host, session, block, files)
-  assert(not lib.windows, "file= to another host doesn't work from Windows yet")
-  math.randomseed(os.time() + os.clock() * 1e6)
-  local id = tostring(os.time()) .. "-"
-  for _ = 1, 4 do id = id .. string.char(math.random(97, 122)) end
-  local uuid = block:gsub("^block:", "")
-  local folder = "/tmp/rex-teams/inbox/" .. uuid .. "/" .. id
+-- Where FILES, absolute paths here, land in BLOCK's inbox on another host
+-- for message ID: their paths there, and the folder holding them. Raises if
+-- two share a name or one is the root folder.
+function lib.inbox(block, id, files)
+  local folder = "/tmp/rex-teams/inbox/" .. block:gsub("^block:", "") .. "/" .. id
   local landed, names = {}, {}
   for _, file in ipairs(files) do
     local name = file:match("([^/]+)/*$")
@@ -178,32 +148,6 @@ function lib.send_files(host, session, block, files)
     names[name] = true
     landed[#landed + 1] = folder .. "/" .. name
   end
-
-  local stage = lib.path("outbox", id)
-  local ok, err = pcall(function()
-    local box = table.concat({ stage, "inbox", uuid, id }, "/")
-    lib.mkdir(box)
-    -- -H copies a link named here as its target; links inside a folder
-    -- stay links, as rex cp copies them.
-    local argv = { "cp", "-RH" }
-    for _, file in ipairs(files) do argv[#argv + 1] = file end
-    argv[#argv + 1] = box
-    local r = rex.exec(argv)
-    if not (r and r.ok) then error("can't copy the files to " .. box .. ": " .. (r and r.stderr or ""), 0) end
-    local root = lib.call("block.method", { session_id = session, block_id = block, method = "list_dir", args = { path = "/tmp/rex-teams", limit = 1 } }, host).status
-    if root == "missing" then
-      -- Without this, rex cp would copy inbox to a missing /tmp/rex-teams
-      -- by renaming it rex-teams, so make /tmp/rex-teams first.
-      lib.mkdir(stage .. "/rex-teams")
-      rex_cp(host, session, stage .. "/rex-teams", ":/tmp/")
-    elseif root ~= "ok" then
-      error("/tmp/rex-teams on " .. host .. ": " .. root, 0)
-    end
-    rex_cp(host, session, stage .. "/inbox", ":/tmp/rex-teams/")
-  end)
-  local removed = rex.exec({ "rm", "-rf", stage })
-  if not ok then error(err, 0) end
-  assert(removed and removed.ok, "can't remove " .. stage)
   return landed, folder
 end
 
@@ -220,25 +164,38 @@ function lib.send_command(block, message, host, script)
     .. " block=" .. lib.quote(block) .. " message=" .. lib.quote(message)
 end
 
--- The header of a message, for another host when CROSS is true. The sender
--- can't know send.lua's path or its own label on the receiver's host, so the
+-- The header of message ID, for another host when CROSS is true. It names
+-- the message, so the receiver can tell messages apart. The sender can't
+-- know send.lua's path or its own label on the receiver's host, so the
 -- receiver fills them in.
-function lib.header(from_session, from_block, cross)
-  local from
-  for _, block in ipairs(lib.blocks(from_session)) do
-    if block.id == from_block then from = lib.name(block) end
-  end
+function lib.header(from_session, from_block, cross, id)
+  local from = lib.name(from_session, from_block)
   if not cross then
-    return "[from " .. from .. ", who can't see this screen. " .. lib.rule
+    return "[from " .. from .. " · msg " .. id .. ", who can't see this screen."
       .. " Reply by running: " .. lib.send_command(from_block, "<reply>") .. "] "
   end
   local r = rex.exec({ "hostname" })
   local name = r and r.ok and r.stdout:match("^%s*(.-)%s*$") or ""
   assert(name ~= "", "can't read this machine's hostname")
-  local id = assert(lib.call("server.status", {}).host_id, "Rex didn't report this host's host_id")
-  return "[from " .. from .. " on " .. name .. " (Rex host " .. id .. "), who can't see this screen. " .. lib.rule
+  local host = assert(lib.call("server.status", {}).host_id, "Rex didn't report this host's host_id")
+  return "[from " .. from .. " on " .. name .. " (Rex host " .. host .. ") · msg " .. id .. ", who can't see this screen."
     .. " To reply, run this with your rex-teams skill's path and your rex hosts label for that host filled in: "
     .. lib.send_command(from_block, "<reply>", "<label>", "<rex-teams skill>/scripts/send.lua") .. "] "
+end
+
+-- A name for a message: the time and four random letters. Two posts in
+-- one second can draw the same letters, so draw again while the outbox
+-- holds that name, or the second would replace the first.
+local seeded
+function lib.id()
+  if not seeded then math.randomseed(os.time() + os.clock() * 1e6) seeded = true end
+  while true do
+    local id = tostring(os.time()) .. "-"
+    for _ = 1, 4 do id = id .. string.char(math.random(97, 122)) end
+    local f = io.open(lib.path("outbox", id .. ".json"))
+    if not f then return id end
+    f:close()
+  end
 end
 
 return lib

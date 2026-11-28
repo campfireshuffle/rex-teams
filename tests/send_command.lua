@@ -76,8 +76,8 @@ check("agents can fill in a placeholder by editing the command text", function()
   end
 end)
 check("the reply command in a message header runs as written", function()
-  lib.blocks = function() return { { id = "block:b1", tab = "it's `me` $HOME", pane = "", split = false } } end
-  local header = lib.header("session:test", "block:b1")
+  lib.blocks = function() return { { id = "block:b1", name = "it's `me` $HOME" } } end
+  local header = lib.header("session:test", "block:b1", false, "1-abcd")
   local reply = assert(header:match("Reply by running: (.*)%] $"))
   arrives(reply, "<reply>")
 end)
@@ -86,7 +86,7 @@ check("a host label and a cross-host reply run as written once filled in", funct
     arrives(lib.send_command("block:b1", message, "ws 1"), message, "ws 1")
   end
   rex = { call = function() return { host_id = "id-mac" } end, exec = function() return { ok = true, stdout = "box\n" } end }
-  local header = lib.header("session:test", "block:b1", true)
+  local header = lib.header("session:test", "block:b1", true, "1-abcd")
   local reply = assert(header:match("your rex hosts label for that host filled in: (.*)%] $"), header)
   local filled = reply:gsub("<rex%-teams skill>/scripts/send%.lua", function() return lib.quote(lib.dir .. "send.lua") end)
     :gsub("<label>", "ws 1")
