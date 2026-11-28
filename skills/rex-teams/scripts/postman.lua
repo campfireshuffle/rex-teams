@@ -2,8 +2,9 @@
 -- /tmp/rex-teams/outbox/<id>.json, each of which also holds its delivery
 -- state: pasted_at, and a recurring alarm's last tick, k. Every 2 s it reads the outbox and delivers what's due,
 -- oldest first per receiver; deleting a file cancels it. The oldest live
--- block labelled "rex-teams postman" is the postman, and OSC 7577 lets Rex
--- start it again after a restart.
+-- block labelled "rex-teams postman" is the postman; it takes that label
+-- once it has reported, and OSC 7577 lets Rex start it again after a
+-- restart.
 --
 -- The save rule: save a message before its paste, and write the sender's
 -- notice before removing the message. Whatever raises leaves the file as
@@ -40,7 +41,7 @@ end
 -- Tell MSG's sender WHAT happened to it. The notice rule: never for a
 -- message to yourself. A notice is to its sender too, so it never causes one.
 local function tell(msg, what)
-  if msg.to.host == nil and msg.to.block == msg.from.block then return end
+  if msg.to.block == msg.from.block then return end
   mail.notice(msg.from, "Message " .. msg.id .. " to " .. msg.to.name .. " " .. what)
 end
 
@@ -60,7 +61,7 @@ local function finish(msg, err)
   end
   if not msg.every then return mail.remove(msg.id) end
   msg.pasted_at = nil
-  mail.write(msg, true)
+  mail.write(msg)
 end
 
 -- Deliver MSG as far as it can go at NOW, os.time(). Returns true if MSG
@@ -90,9 +91,10 @@ end
 
 -- The live postmen's block IDs, oldest first. Rex is the record: a postman
 -- is a block labelled "rex-teams postman" in a session labelled
--- "rex-teams", and it's live while it runs `rex`. After a Rex restart, a
--- postman that had stopped comes back as a live shell. Labels can repeat,
--- so every rex-teams session counts.
+-- "rex-teams", and it's live while it runs `rex`. It takes the label only
+-- after it has reported, so a postman that fails at start never counts.
+-- After a Rex restart, a postman that had stopped comes back as a live
+-- shell. Labels can repeat, so every rex-teams session counts.
 function M.live()
   local out = {}
   for _, s in ipairs(lib.call("session.list", {}).sessions) do
@@ -100,9 +102,8 @@ function M.live()
       lib.attach(s.session_id)
       for _, b in ipairs(lib.call("session.list_blocks", { session_id = s.session_id }).blocks) do
         if b.label == "rex-teams postman" then
-          -- A block can close while it's listed.
-          local ok, p = pcall(lib.call, "block.method", { session_id = s.session_id, block_id = b.block_id, method = "process", args = {} })
-          if ok and not p.last_exit and p.foreground and p.foreground.name == "rex" then out[#out + 1] = b.block_id end
+          local p = lib.call("block.method", { session_id = s.session_id, block_id = b.block_id, method = "process", args = {} })
+          if not p.last_exit and p.foreground and p.foreground.name == "rex" then out[#out + 1] = b.block_id end
         end
       end
     end
@@ -120,15 +121,39 @@ local function home()
   return lib.call("session.create", { label = "rex-teams" }).session_id
 end
 
--- Make sure this host's postman is running, starting it if not. Raises if
--- it doesn't start.
-function M.ensure()
+-- The lock ensure holds while it starts a postman, so senders that find
+-- none at once start just one between them. A sender holds it for about a
+-- second, and at most the 5 s its start can take, so a lock held for 30 s
+-- was left by a sender that was killed: break it. Returns false if a
+-- postman went live while it waited.
+local lock_path = lib.path("postman.lock")
+local function unlock()
+  rex.exec(lib.windows and { "cmd", "/c", "rmdir", lock_path } or { "rmdir", lock_path })
+end
+local function lock()
+  lib.mkdir(lib.root)
+  local waited = 0
+  while not assert(rex.exec(lib.windows and { "cmd", "/c", "mkdir", lock_path } or { "mkdir", lock_path })).ok do
+    if M.live()[1] then return false end
+    if waited >= 30 then
+      print("postman: breaking a lock held for 30s: " .. lock_path)
+      unlock()
+      waited = 0
+    end
+    rex.sleep(0.05)
+    waited = waited + 0.05
+  end
+  return true
+end
+
+-- Start a postman and wait until it's live, unless one went live while
+-- ensure waited for the lock.
+local function start()
   if M.live()[1] then return end
   local session = home()
   lib.attach(session)
   local block = lib.call("session.new_block", {
     session_id = session,
-    label = "rex-teams postman",
     flavor = "com.superlogical.terminal.shell",
     -- A postman that stops leaves its block, and its error, in place.
     options = { command = { "rex", "do", M.script, "--args", "{}" }, exit = { on_completion = false } },
@@ -143,6 +168,15 @@ function M.ensure()
     rex.sleep(0.05)
   end
   error("the postman didn't start within 5s." .. hint, 0)
+end
+
+-- Make sure this host's postman is running, starting it if not. Raises if
+-- it doesn't start.
+function M.ensure()
+  if M.live()[1] or not lock() then return end
+  local ok, err = pcall(start)
+  unlock()
+  if not ok then error(err, 0) end
 end
 
 -- OSC 7577 -------------------------------------------------------------
@@ -191,6 +225,7 @@ function M.run()
   local live = M.live()
   if live[1] and live[1] < me then return quit("an older postman is running") end
   M.report()
+  lib.call("session.set_block_label", { session_id = me_session, block_id = me, label = "rex-teams postman" })
   print("postman: delivering " .. mail.dir())
 
   local said -- the error the last pass stopped on

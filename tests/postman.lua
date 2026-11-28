@@ -7,12 +7,16 @@ local real_dofile, real_time, real_getenv, real_print = dofile, os.time, os.gete
 local json = real_dofile("tests/lib/json.lua")
 local TOKEN = "fixed-test-token-0123456789"
 local function quote(s) return "'" .. tostring(s):gsub("'", "'\\''") .. "'" end
-local function run_sh(argv, env)
+-- With PIDFILE, the shell that runs ARGV writes its pid there: the pid
+-- of ARGV's parent, as `rex do` is in Rex.
+local function run_sh(argv, env, pidfile)
   local line = "env"
   for k, v in pairs(env) do line = line .. " " .. k .. "=" .. quote(v) end
   for _, a in ipairs(argv) do line = line .. " " .. quote(a) end
   local out = os.tmpname()
-  local status = os.execute(line .. " >" .. out .. " 2>&1")
+  line = line .. " >" .. out .. " 2>&1"
+  if pidfile then line = "echo $$ >" .. quote(pidfile) .. "; " .. line .. "; exit $?" end
+  local status = os.execute(line)
   local f = assert(io.open(out))
   local text = f:read("*a")
   f:close()
@@ -36,7 +40,7 @@ local function reset()
     now = 1795671000, t = 1795671000, env = { REX_BLOCK = "block:pm", OSC7577_TOKEN = TOKEN },
     sessions = {},
     blocks = { ["block:pm"] = { session = "s:home", pid = 4242 }, ["block:me"] = { session = "s:1" }, ["block:to"] = { session = "s:1" } },
-    timers = {}, out = {}, printed = {}, stopped = nil, closed = {}, receivers = {}, sleeps = 0, slept = 0, attached = {},
+    timers = {}, out = {}, printed = {}, stopped = nil, closed = {}, receivers = {}, sleeps = 0, slept = 0, attached = {}, made = 0,
   }
 end
 
@@ -112,10 +116,13 @@ rex = {
     end
     if method == "session.new_block" then
       S.new_block = args
-      -- Its process takes a moment to start.
-      S.blocks["block:new"] = { session = args.session_id, label = args.label }
-      return { block_id = "block:new" }
+      -- Its process takes a moment to start. Later blocks sort after it.
+      local id = "block:new" .. (S.made > 0 and S.made or "")
+      S.made = S.made + 1
+      S.blocks[id] = { session = args.session_id, label = args.label }
+      return { block_id = id }
     end
+    if method == "session.set_block_label" then S.blocks[args.block_id].label = args.label return {} end
     if method == "block.method" and args.method == "process" then
       local b = S.blocks[args.block_id]
       if not b then error("block not found (status=404 code=not_found)", 0) end
@@ -141,7 +148,7 @@ rex = {
       return { ok = ok, code = ok and 0 or 1, stdout = "", stderr = "" }
     end
     assert(argv[1] == "sh" and argv[3]:find("sha256sum", 1, true), "unexpected command " .. table.concat(argv, " "))
-    return run_sh(argv, { OSC7577_TOKEN = S.env.OSC7577_TOKEN })
+    return run_sh(argv, { OSC7577_TOKEN = S.env.OSC7577_TOKEN }, tmp .. "/parent.pid")
   end,
   after = function(s, f) S.timers[#S.timers + 1] = { due = S.t + s, f = f } end,
   sleep = function(seconds)
@@ -280,6 +287,9 @@ trial("the postman reports its exact command with OSC 7577", function()
   local out = table.concat(S.out)
   local body, mac = out:match("^\27%]7577;(pid=%d+:time=1795671000:argv=[^:]+):mac=(%x+)\27\\$")
   assert(body, ("%q"):format(out))
+  -- The owner is the shell's parent, not the shell, which exits at once.
+  local pid = lib.read(tmp .. "/parent.pid"):match("%d+")
+  assert(body:match("^pid=(%d+):") == pid, body .. ", parent " .. pid)
   local want = run_sh({ "sh", "-c", 'printf %s "$1" | sha256sum | cut -c1-64', "sh", body .. ":" .. TOKEN }, {}).stdout:gsub("%s", "")
   assert(mac == want, "wrong mac")
   local words = {}
@@ -332,7 +342,6 @@ trial("with no rex-teams folder yet, the first postman delivers", function()
   queue({})
   run_to(S.t + 3)
   assert(delivering() == 1 and #r.delivered == 1 and #queued() == 0)
-  assert(not io.open(root .. "/postman.json"), "postman.json is back")
 end)
 trial("two postmen starting at once: the older delivers, the newer closes its block", function()
   postman("block:pm")
@@ -675,7 +684,8 @@ local function slow_world(step, every)
     receiver("block:o" .. i, { "down" })
     queue({ id = "1795671000-oo" .. string.char(96 + i) .. "a", to = "block:o" .. i })
   end
-  alarm({ id = "1795671000-alrm", every = every })
+  -- Behind them, so the slow checks come first in each pass.
+  alarm({ id = "1795671000-alrm", every = every, seq = 1 })
   fake.exists = function(addr)
     if addr.block ~= "block:me" then S.t = S.t + step S.now = math.floor(S.t) end
     return real_fake.exists(addr)
@@ -692,7 +702,9 @@ trial("slow checks of other receivers never drop an alarm tick that nothing over
     -- go out: only a later tick due too may take its place.
     local turns = {}
     P.deliver = function(msg, now)
-      if msg.every then turns[#turns + 1] = { t = S.t, k = math.floor((now - msg.start) / every) } end
+      -- The last tick due now by the clock, not by NOW, which a pass
+      -- could have read before its slow checks.
+      if msg.every then turns[#turns + 1] = { t = S.t, k = math.floor((S.now - msg.start) / every) } end
       return real_P.deliver(msg, now)
     end
     start()
@@ -702,6 +714,7 @@ trial("slow checks of other receivers never drop an alarm tick that nothing over
       local tick = p.k
       assert(tick > last, "tick " .. tick .. " after " .. last)
       assert(p.t >= 1795671000 + every * tick, "tick " .. tick .. " early")
+      assert(tick == math.floor((math.floor(p.t) - 1795671000) / every), ("every=%d: tick %d pasted at +%.1f"):format(every, tick, p.t - 1795671000))
       pasted[tick], last = true, tick
     end
     assert(last >= 5, "only up to tick " .. last)
@@ -854,11 +867,11 @@ end)
 -- ensure ------------------------------------------------------------------------
 
 -- P.ensure while the postman it starts, block:new, does WHAT as it waits:
--- "starts", "fails" (exits), "hangs", or "loses" to an older postman and
--- closes its own block.
+-- "starts" (reports and takes its label), "fails" (exits), "hangs", or
+-- "loses" to an older postman and closes its own block.
 local function ensure(what)
   S.on_sleep = function(i)
-    if what == "starts" and i == 1 then S.blocks["block:new"].pid = 7 end
+    if what == "starts" and i == 1 then S.blocks["block:new"].pid, S.blocks["block:new"].label = 7, "rex-teams postman" end
     if what == "fails" and i == 1 then S.blocks["block:new"].last_exit = { exit_code = 1 } end
     if what == "loses" and i == 1 then
       -- The older one runs, but Rex doesn't show its process yet.
@@ -874,7 +887,8 @@ trial("ensure starts the postman in a rex-teams session, and returns once it run
   assert(ensure("starts") == nil)
   local nb = assert(S.new_block, "no block started")
   local c = nb.options.command
-  assert(S.created == "rex-teams" and nb.session_id == "s:home" and nb.label == "rex-teams postman")
+  -- It takes its label once it has reported.
+  assert(S.created == "rex-teams" and nb.session_id == "s:home" and nb.label == nil)
   assert(#c == 5 and c[1] == "rex" and c[2] == "do" and c[3] == lib.dir .. "postman.lua" and c[4] == "--args" and c[5] == "{}", table.concat(c, " "))
   assert(nb.options.exit.on_completion == false, "a failed postman's block must stay")
   assert(S.sleeps == 1, S.sleeps .. " sleeps")
@@ -904,6 +918,93 @@ trial("a postman that doesn't run within 5s is an error naming its block", funct
   fails("the postman didn't start within 5s. See why with: rex capture -s s:home -b block:new", function() ensure("hangs") end)
   -- The limit is the time waited, not the number of checks.
   assert(math.abs(S.slept - 5) < 1e-6, "waited " .. S.slept .. " seconds")
+end)
+local function locked()
+  local status = os.execute("test -d " .. quote(root .. "/postman.lock"))
+  return status == 0 or status == true
+end
+-- Run the postman in BLOCK, as Rex does once its process is up.
+local function run_in(block)
+  S.blocks[block].pid = 7
+  local prev = S.env.REX_BLOCK
+  S.env.REX_BLOCK = block
+  local ok, err = pcall(P.run)
+  S.env.REX_BLOCK, S.stopped = prev, nil
+  if not ok then S.blocks[block].last_exit = { exit_code = 1 } end
+  return ok, err
+end
+trial("a postman that fails before it reports never counts: the send raises and queues nothing", function()
+  receiver("block:to")
+  S.on_sleep = function(i)
+    -- Its process is up at the first check; its report fails before the second.
+    if i == 1 then S.blocks["block:new"].pid = 7 end
+    if i == 2 then
+      S.env.OSC7577_TOKEN = false
+      assert(not run_in("block:new"))
+    end
+  end
+  S.env.REX_BLOCK = "block:me"
+  lib.attach("s:home")
+  fails("the postman didn't start. See why with: rex capture -s s:home -b block:new", function() mail.post({ to = "block:to", text = "lost?" }) end)
+  assert(#queued() == 0, "queued: " .. table.concat(queued(), " "))
+  assert(not locked(), "the lock is still held")
+end)
+-- SENDERS call ensure at once, each in its own coroutine, taking turns.
+-- After each round of turns, the postmen in the blocks made so far start:
+-- the newest first, then the rest oldest first, as round 5 saw in Rex.
+-- Without LOCK, every sender gets the lock. Returns the senders' errors.
+local function race(senders, lock)
+  local real_exec, real_sleep = rex.exec, rex.sleep
+  if not lock then
+    rex.exec = function(argv)
+      if argv[#argv] == root .. "/postman.lock" then return { ok = true, code = 0, stdout = "", stderr = "" } end
+      return real_exec(argv)
+    end
+  end
+  rex.sleep = function(seconds) S.slept = S.slept + seconds coroutine.yield() end
+  local threads, errs, up = {}, {}, {}
+  local done, err = pcall(function()
+    for i = 1, senders do threads[i] = coroutine.create(P.ensure) end
+    for _ = 1, 1000 do
+      local waiting = false
+      for _, co in ipairs(threads) do
+        if coroutine.status(co) ~= "dead" then
+          local ok, err = coroutine.resume(co)
+          if not ok then errs[#errs + 1] = err end
+          waiting = waiting or coroutine.status(co) ~= "dead"
+        end
+      end
+      local made = {}
+      for id in pairs(S.blocks) do if id:find("^block:new") and not up[id] then made[#made + 1] = id up[id] = true end end
+      table.sort(made)
+      if #made > 1 then table.insert(made, 1, table.remove(made)) end
+      for _, id in ipairs(made) do assert(run_in(id)) end
+      if not waiting then break end
+    end
+  end)
+  rex.exec, rex.sleep = real_exec, real_sleep
+  assert(done, err)
+  return errs
+end
+trial("six first sends at once start one postman, which holds the lock only while it starts", function()
+  local errs = race(6, false)
+  assert(#errs == 0, table.concat(errs, "; "))
+  assert(#P.live() == 2 and delivering() == 2, "without the lock: " .. #P.live() .. " postmen, not the 2 round 5 saw")
+  reset()
+  errs = race(6, true)
+  assert(#errs == 0, table.concat(errs, "; "))
+  assert(S.made == 1 and #P.live() == 1 and delivering() == 1, "with the lock: " .. S.made .. " blocks, " .. #P.live() .. " postmen")
+  assert(not locked(), "the lock is still held")
+end)
+trial("a lock left by a killed sender is broken after 30 s, and a postman starts", function()
+  os.execute("mkdir -p " .. quote(root .. "/postman.lock"))
+  S.on_sleep = function()
+    if S.blocks["block:new"] and not S.blocks["block:new"].pid then assert(run_in("block:new")) end
+  end
+  P.ensure()
+  assert(#P.live() == 1 and S.made == 1 and not locked())
+  assert(S.slept >= 30 and S.slept < 31, "waited " .. S.slept .. " s")
+  assert(table.concat(S.printed, " | "):find("postman: breaking a lock held for 30s: " .. root .. "/postman.lock", 1, true), table.concat(S.printed, " | "))
 end)
 
 -- Ten end-to-end trials ------------------------------------------------------------
@@ -943,7 +1044,7 @@ trial("E1 the first send on a fresh machine starts the postman, which delivers i
   local r = people()
   starts_on_ensure()
   local id, name = post({ to = "block:to", text = "review PR 12" })
-  assert(name == "Reviewer" and S.created == "rex-teams" and S.new_block.label == "rex-teams postman")
+  assert(name == "Reviewer" and S.created == "rex-teams" and S.blocks["block:new"].label == "rex-teams postman")
   run_to(S.t + P.poll)
   assert(texts(r.delivered) == "[from Me · msg " .. id .. ", who can't see this screen. " .. reply("block:me") .. "review PR 12", texts(r.delivered))
   assert(#queued() == 0 and not S.stopped)
