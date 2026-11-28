@@ -123,8 +123,7 @@ end
 -- The lock ensure holds while it starts a postman, so senders that find
 -- none at once start just one between them. A sender holds it for about a
 -- second, and at most the 5 s its start can take, so a lock held for 30 s
--- was left by a sender that was killed: break it. Returns false if a
--- postman went live while it waited.
+-- was left by a sender that was killed: break it.
 local lock_path = lib.path("postman.lock")
 local function unlock()
   rex.exec(lib.windows and { "cmd", "/c", "rmdir", lock_path } or { "rmdir", lock_path })
@@ -133,16 +132,13 @@ local function lock()
   lib.mkdir(lib.root)
   local waited = 0
   while not assert(rex.exec(lib.windows and { "cmd", "/c", "mkdir", lock_path } or { "mkdir", lock_path })).ok do
-    if M.live()[1] then return false end
     if waited >= 30 then
       print("postman: breaking a lock held for 30s: " .. lock_path)
       unlock()
-      waited = 0
     end
     rex.sleep(0.05)
     waited = waited + 0.05
   end
-  return true
 end
 
 -- Start a postman and wait until it's live, unless one went live while
@@ -172,7 +168,8 @@ end
 -- Make sure this host's postman is running, starting it if not. Raises if
 -- it doesn't start.
 function M.ensure()
-  if M.live()[1] or not lock() then return end
+  if M.live()[1] then return end
+  lock()
   local ok, err = pcall(start)
   unlock()
   if not ok then error(err, 0) end
