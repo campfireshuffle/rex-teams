@@ -98,7 +98,8 @@ postman here ─ rex.server("ws") ─► exists, type on ws; rex cp the files in
 | `/tmp/rex-teams/inbox/<block>/<id>/` | Files that arrived from another host. The receiver removes them. |
 | `/tmp/rex-teams/tasks/<task>/` | A subagent's prompt, report and close command. |
 | `/tmp/rex-teams/depth/<block>` | How many levels of subagents a subagent may start. |
-| The `rex-teams` session | Holds the postman's detached block, labelled `rex-teams postman`. Rex is the record of who the postman is: the oldest live block with that label (one running `rex`) in any session labelled `rex-teams`. `ensure` starts one if there's none, and a newer one quits at start. Right after a Rex restart, two can rarely overlap. |
+| `/tmp/rex-teams/postman.lock/` | Held by `ensure` only while it checks for a postman and starts one, so senders racing to start one start just one. Released once the new postman is live, or on failure. A lock left by a crashed sender is broken once it's stale. |
+| The `rex-teams` session | Holds the postman's detached block. Rex is the record of who the postman is: the oldest live block labelled `rex-teams postman` (one running `rex`) in any session labelled `rex-teams`. A postman takes that label only once it has reported its restart command, so `ensure` never counts a half-started one. `ensure` starts one if there's none, and a newer one quits at start. Right after a Rex restart, two can rarely overlap. |
 
 On Windows the root is `%TEMP%\rex-teams`.
 
@@ -113,7 +114,7 @@ If Rex grows a better API, this table says what to swap.
 | `pane.attach` | `rex cp` | the same |
 | postman beat | `rex.after` | the same |
 | postman restart | OSC 7577 report, and the trust rule over the scripts folder that README.md quotes | the same |
-| postman singleton | `session.list`, `session.list_blocks`, `block.method process` for liveness | a Rex singleton or named service |
+| postman singleton | a mkdir lock in `ensure`; `session.list`, `session.list_blocks`, `block.method process` for liveness | a Rex singleton or named service |
 | postman home | `session.list`, `session.create`, `session.new_block` (detached) | a Rex background service |
 | cross-host | `rex.server(label)` | the same |
 | listing the outbox | `block.method list_dir` | the same |
