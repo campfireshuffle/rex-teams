@@ -142,7 +142,7 @@ local function lock()
 end
 
 -- Start a postman and wait until it's live, unless one went live while
--- ensure waited for the lock.
+-- ensure waited for the lock. Returns why it didn't start, or nil.
 local function start()
   if M.live()[1] then return end
   local session = home()
@@ -159,10 +159,10 @@ local function start()
     -- A postman that finds an older one closes its own block, so this call
     -- can fail; the next check then finds the older one.
     local asked, p = pcall(lib.call, "block.method", { session_id = session, block_id = block, method = "process", args = {} })
-    if asked and p.last_exit then error("the postman didn't start." .. hint, 0) end
+    if asked and p.last_exit then return "the postman didn't start." .. hint end
     rex.sleep(0.05)
   end
-  error("the postman didn't start within 5s." .. hint, 0)
+  return "the postman didn't start within 5s." .. hint
 end
 
 -- Make sure this host's postman is running, starting it if not. Raises if
@@ -170,9 +170,9 @@ end
 function M.ensure()
   if M.live()[1] then return end
   lock()
-  local ok, err = pcall(start)
+  local why = start()
   unlock()
-  if not ok then error(err, 0) end
+  if why then error(why, 0) end
 end
 
 -- OSC 7577 -------------------------------------------------------------

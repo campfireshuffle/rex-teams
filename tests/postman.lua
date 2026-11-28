@@ -5,7 +5,7 @@
 -- real command is the OSC 7577 shell, run with a fixed token.
 local real_dofile, real_time, real_getenv, real_print = dofile, os.time, os.getenv, print
 local json = real_dofile("tests/lib/json.lua")
-local TOKEN = "fixed-test-token-0123456789"
+local TOKEN = "fixed-test-token-0123456789" -- ggignore: a test value, not a secret
 local function quote(s) return "'" .. tostring(s):gsub("'", "'\\''") .. "'" end
 -- With PIDFILE, the shell that runs ARGV writes its pid there: the pid
 -- of ARGV's parent, as `rex do` is in Rex.
