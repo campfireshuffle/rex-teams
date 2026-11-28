@@ -15,7 +15,7 @@ local function reset()
   S = { now = 1795671000, calls = {}, printed = {}, ensured = {} }
 end
 os.time = function(t) if t then return real_time(t) end return S.now end
-os.getenv = function(k) if k == "REX_BLOCK" then return "block:agent" end return real_getenv(k) end
+os.getenv = function(k) if k == "REX_BLOCK" then return S.me or "block:agent" end return real_getenv(k) end
 local tabs = { ["block:agent"] = "Agent", ["block:other"] = "Marketer" }
 rex = {
   args = {}, json = json,
@@ -111,6 +111,7 @@ trial("a recurring alarm stores its interval and start", function()
   set({ every = 60, message = "tick" })
   local m = queued()[1]
   assert(m.every == 60 and m.start == 1795671000 and not m.at)
+  assert(m.head == "[alarm you set · msg " .. m.id .. "] ", m.head)
 end)
 trial("fractional intervals are stored exactly", function()
   set({ every = 10.5, message = "fast" })
@@ -125,7 +126,8 @@ trial("an alarm for another agent has the normal header", function()
   assert(m.to.block == "block:other" and m.head:find("[from Agent · msg " .. m.id .. ", ", 1, true) == 1 and m.head:find("Reply by running: ", 1, true))
   assert(S.printed[1]:find(" for Marketer. ", 1, true), S.printed[1])
 end)
-trial("a message with a newline is refused before anything exists", function()
+trial("a missing message, or one with a newline, is refused before anything exists", function()
+  fails("message is required", function() set({ ["in"] = 5 }) end)
   fails("the message must be one line", function() set({ ["in"] = 5, message = "a\nb" }) end)
   fails("the message is empty", function() set({ ["in"] = 5, message = "" }) end)
 end)
@@ -144,7 +146,8 @@ end)
 trial("host= is refused, since alarms reach this host only", function()
   local ok, err = pcall(set, { host = "nosuchhost", ["in"] = 3600, message = "x", block = "Marketer" })
   assert(not ok and #queued() == 0 and #S.calls == 0, "a host= alarm was set")
-  assert(tostring(err):find("alarms reach this host only", 1, true) and not tostring(err):find("%.lua:%d"), tostring(err))  ok, err = pcall(set, { host = "nosuchhost", list = true })
+  assert(tostring(err):find("alarms reach this host only", 1, true) and not tostring(err):find("%.lua:%d"), tostring(err))
+  ok, err = pcall(set, { host = "nosuchhost", list = true })
   assert(not ok and tostring(err):find("alarms reach this host only", 1, true) and #S.printed == 0, tostring(err))
 end)
 -- Timers round to whole seconds, so a shorter interval can lose a tick.
@@ -158,15 +161,20 @@ trial("every= is at least 10 seconds; in= takes any positive number", function()
   set({ ["in"] = 0.5, message = "soon" })
   assert(queued()[1].at == 1795671000.5)
 end)
-trial("list=true shows your alarms and how to cancel each", function()
+trial("list=true shows your alarms and how to cancel each, and nothing else", function()
   set({ ["in"] = 120, message = "Check CI" })
   set({ every = 60, message = "tick", block = "Marketer" })
+  real_dofile("skills/rex-teams/scripts/mail.lua").post({ to = "Marketer", text = "a plain message" })
+  S.me = "block:other"
+  set({ ["in"] = 60, message = "Marketer's own alarm", block = "Agent" })
+  S.me = nil
   S.printed = {}
   set({ list = true })
   local all = table.concat(S.printed, "\n")
   assert(all:find("at 03:", 1, true) or all:find("  at ", 1, true), all)
   assert(all:find("  to Agent: Check CI", 1, true) and all:find("every 60s  to Marketer: tick", 1, true), all)
   assert(all:find("  cancel: rm " .. root .. "/outbox/", 1, true), all)
+  assert(not all:find("plain message", 1, true) and not all:find("Marketer's own", 1, true), all)
 end)
 
 trial("on Windows the setter needs no POSIX tools", function()

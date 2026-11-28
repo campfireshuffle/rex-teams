@@ -960,6 +960,29 @@ trial("a postman that fails before it reports never counts: the send raises and 
   assert(#queued() == 0, "queued: " .. table.concat(queued(), " "))
   assert(not locked(), "the lock is still held")
 end)
+trial("a postman counts as live only once it has reported (decision 010 Q2)", function()
+  -- Rex shows a label at once, and a waiting sender checks every 50 ms, so
+  -- a postman labelled before its report would count while it reports.
+  local real_exec, during = rex.exec, nil
+  rex.exec = function(argv)
+    if argv[1] == "sh" then during = #P.live() end
+    return real_exec(argv)
+  end
+  S.on_sleep = function(i) if i == 1 then assert(run_in("block:new")) end end
+  P.ensure()
+  rex.exec = real_exec
+  assert(during == 0, "live during its report: " .. tostring(during))
+  assert(#P.live() == 1)
+end)
+trial("the first send after a reboot, with no /tmp/rex-teams, starts a postman", function()
+  os.execute("rm -rf " .. quote(root))
+  S.on_sleep = function(i)
+    assert(i < 1000, "ensure is stuck on the lock")
+    if S.blocks["block:new"] and not S.blocks["block:new"].pid then assert(run_in("block:new")) end
+  end
+  P.ensure()
+  assert(#P.live() == 1 and S.made == 1 and not locked())
+end)
 -- SENDERS call ensure at once, each in its own coroutine, taking turns.
 -- After each round of turns, the postmen in the blocks made so far start:
 -- the newest first, then the rest oldest first, as round 5 saw in Rex.

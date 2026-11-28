@@ -212,7 +212,7 @@ trial("any positive interval is taken, however short", function()
   mail.post({ to = "Helper", text = "tick", every = 0.5 })
   assert(only().every == 0.5)
 end)
-trial("list reads the queue oldest first, and filters by receiver", function()
+trial("list reads the queue oldest first, filters by receiver, and skips a file removed since it was listed", function()
   local here = mail.list
   os.execute("mkdir -p " .. quote(root .. "/outbox"))
   local function full(m)
@@ -224,7 +224,7 @@ trial("list reads the queue oldest first, and filters by receiver", function()
   mail.write(full({ id = "100-aaaa", posted = 100, to = { block = "block:far", host = "ws" } }))
   rex.call = function(method, args)
     if method == "block.method" and args.method == "list_dir" then
-      return { status = "ok", entries = { { name = "200-bbbb.json" }, { name = "100-aaaa.json" }, { name = "100-aaaa.json.tmp" }, { name = "x" } } }
+      return { status = "ok", entries = { { name = "200-bbbb.json" }, { name = "100-aaaa.json" }, { name = "100-aaaa.json.tmp" }, { name = "x" }, { name = "300-cccc.json" } } }
     end
     return servers[""].call(method, args)
   end
